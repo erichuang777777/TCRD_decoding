@@ -7,6 +7,30 @@ Decode Taiwan Cancer Registry (TCR) raw fields — including all Site-Specific F
 
 ---
 
+## Coding Standard Versions
+
+All field mappings and decoders in this package are written against the following **official TCR codebooks**:
+
+| Document | Version | Effective Date |
+|----------|---------|---------------|
+| TCR Longform Coding Manual | `Longform-Manual_Official-version_20251224_W-1` | 2025-12-24 |
+| TCR SSF Definitions Manual | `Cancer-SSF-Manual_Official-version_20251204_W` | 2025-12-04 |
+
+Additional classification systems used:
+
+| Standard | Version / Edition | Applied to |
+|----------|------------------|-----------|
+| ICD-O-3  | 3rd Edition      | Topography (TCODE1) and morphology (MCODE) |
+| AJCC     | 7th & 8th Editions (auto-detected) | TNM staging |
+| UICC TNM | 8th Edition      | Pathological staging fields (PT/PN/PM) |
+| WHO Classification of Tumours | 2022 (Breast) | Nottingham grade, histology |
+| St. Gallen Consensus | 2013 / 2015 | Molecular subtype (Luminal A/B, HER2-E, TNBC) |
+| ASCO/CAP | 2010 Guidelines | ER/PR/HER2 positivity thresholds (≥1%) |
+
+> **Version traceability**: `from tcr_decoder import TCR_CODEBOOK_VERSION, TCR_SSF_MANUAL_VERSION`
+
+---
+
 ## Supported Cancer Groups
 
 | Group | ICD-O-3 | Key SSF Fields |
@@ -195,7 +219,7 @@ pytest tests/ --cov=tcr_decoder --cov-report=term-missing
 pytest tests/test_adversarial.py -v
 ```
 
-**517 tests** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression
+**685 tests** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression, pipeline bug regression (Round 3), mathematical formula verification (Round 4)
 
 ---
 

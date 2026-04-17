@@ -57,3 +57,9 @@ codebook_md/
 
 # Archive of superseded scripts
 _archive/
+
+# Sensitive / patient-linked data — NEVER commit regardless of location
+*metaplastic*
+*patient_data*
+*real_data*
+*PHI*
