@@ -1285,7 +1285,9 @@ class TestFullPipelineExport:
         assert 'Clinical_Clean' in sheets
         assert 'Clinical_Flags' in sheets
         assert 'Data_Dictionary' in sheets
-        assert 'SSF_Field_Map' in sheets
+        # SSF_Field_Map and Data_Quality removed — content merged into Data_Dictionary
+        assert 'SSF_Field_Map' not in sheets
+        assert 'Data_Quality' not in sheets
 
     def test_lung_cancer_group_auto_detected(self, tmp_path, lung_raw_df):
         import warnings

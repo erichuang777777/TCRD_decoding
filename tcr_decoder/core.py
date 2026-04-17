@@ -637,27 +637,11 @@ class TCRDecoder:
             # Sheet 1: Clean clinical data (column headers prefixed with TCR field numbers)
             apply_tcr_labels(self._clean_df).to_excel(writer, sheet_name='Clinical_Clean', index=False)
 
-            # Sheet 2: Data Quality Report
-            dq_rows = []
-            for col in self._clean_df.columns:
-                n_total = len(self._clean_df)
-                n_filled = self._clean_df[col].dropna().apply(
-                    lambda x: str(x).strip() != '').sum()
-                dq_rows.append({
-                    'Column': col,
-                    'N_Filled': int(n_filled),
-                    'N_Missing': int(n_total - n_filled),
-                    'Completeness_%': round(100 * n_filled / n_total, 1),
-                    'N_Unique': int(self._clean_df[col].dropna().nunique()),
-                })
-            pd.DataFrame(dq_rows).to_excel(writer, sheet_name='Data_Quality', index=False)
-
-            # Sheet 3: Clinical Flags
+            # Sheet 2: Clinical Flags (data-quality warnings for analysts)
             self._flags_df.to_excel(writer, sheet_name='Clinical_Flags', index=False)
 
-            # Sheet 4: Subtype / Biomarker Summary (cancer-type aware)
+            # Sheet 3: Subtype / Biomarker Summary (cancer-type aware)
             _grp = self.cancer_group or 'generic'
-            _profile = get_ssf_profile(_grp)
             sub_col = 'Molecular_Subtype'
             if sub_col in self._clean_df.columns:
                 sub = self._clean_df[sub_col].value_counts().reset_index()
@@ -665,30 +649,21 @@ class TCRDecoder:
                 sub['Percent'] = (100 * sub['Count'] / len(self._clean_df)).round(1)
                 sub.to_excel(writer, sheet_name='Subtype_Summary', index=False)
 
-            # SSF Field map for this cancer group
-            ssf_map_rows = [
-                {
-                    'SSF_Field': ssf_key,
-                    'Output_Column': fdef.column_name,
-                    'Description': fdef.description,
-                    'Decoder': 'custom' if fdef.decoder else 'generic numeric',
-                    'Unit': fdef.unit,
-                }
-                for ssf_key, fdef in _profile.fields.items()
-            ]
-            pd.DataFrame(ssf_map_rows).to_excel(
-                writer, sheet_name='SSF_Field_Map', index=False)
-
-            # Sheet 5: Data Dictionary
+            # Sheet 4: Data Dictionary — one row per column, analyst-friendly.
+            # Includes: Description, Data_Type, Completeness_%, N_Filled,
+            # N_Missing, N_Unique, Sample_Values.
+            # SSF_Field_Map (raw SSF → column name mapping) and the separate
+            # Data_Quality sheet have been removed — their content is fully
+            # covered here.
             dd = generate_data_dictionary(self._clean_df)
             dd.to_excel(writer, sheet_name='Data_Dictionary', index=False)
 
-            # Sheet 6: Input Validation (if available)
+            # Sheet 5: Input Validation (if available)
             if hasattr(self, '_input_result'):
                 self._input_result.to_dataframe().to_excel(
                     writer, sheet_name='Input_Validation', index=False)
 
-            # Sheet 7: Pipeline Log
+            # Sheet 6: Pipeline Log
             pd.DataFrame({'Log': self._log}).to_excel(
                 writer, sheet_name='Pipeline_Log', index=False)
 
@@ -696,8 +671,8 @@ class TCRDecoder:
         kb = os.path.getsize(str(out_path)) / 1024
         self._log_msg(f'  SAVED: {out_path.name} ({kb:.0f} KB)')
         self._log_msg(f'  Cancer group: {self.cancer_group or "generic"}')
-        self._log_msg(f'  Sheets: Clinical_Clean, Data_Quality, Clinical_Flags, '
-                      f'Subtype_Summary, SSF_Field_Map, Data_Dictionary, Pipeline_Log')
+        self._log_msg(f'  Sheets: Clinical_Clean, Clinical_Flags, '
+                      f'Subtype_Summary, Data_Dictionary, Pipeline_Log')
         return out_path
 
     def run(self, output_path: Union[str, Path], scores: bool = True) -> Path:

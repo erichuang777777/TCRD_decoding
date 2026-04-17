@@ -311,25 +311,41 @@ def apply_tcr_labels(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def generate_data_dictionary(df: pd.DataFrame) -> pd.DataFrame:
-    """Generate a data dictionary DataFrame for the given clinical output.
+    """Generate an analyst-friendly data dictionary for the clinical output.
+
+    One row per output column.  Columns returned:
+
+        Column          — output column name
+        Description     — plain-language clinical meaning
+        Data_Type       — Numeric / Categorical / Text / Date / Boolean
+        Completeness_%  — % of patients with a non-missing value
+        N_Filled        — count of non-missing values
+        N_Missing       — count of missing / unknown values
+        N_Unique        — number of distinct non-missing values
+        Sample_Values   — up to 3 example values (or all if ≤ 5 unique)
+
+    Technical implementation columns (Source_Field, Decoder) are intentionally
+    omitted — they are developer-only details that add no value to analysts.
+    Use tcr_decoder.data_dictionary.COLUMN_REGISTRY for the full metadata if
+    needed programmatically.
 
     Args:
         df: The decoded clinical DataFrame (with or without derived variables)
 
     Returns:
-        DataFrame with one row per column describing its metadata
+        DataFrame with one row per column
     """
     rows = []
     for col in df.columns:
         meta = COLUMN_REGISTRY.get(col, ('unknown', 'unknown', ''))
-        source, decoder, desc = meta[0], meta[1], meta[2]
+        desc = meta[2]          # only the human-readable description is shown
 
         series = df[col]
         n_total = len(series)
-        n_filled = series.dropna().apply(lambda x: str(x).strip() != '').sum()
+        n_filled = int(series.dropna().apply(lambda x: str(x).strip() != '').sum())
         n_missing = n_total - n_filled
         pct_complete = round(100 * n_filled / n_total, 1)
-        n_unique = series.dropna().nunique()
+        n_unique = int(series.dropna().nunique())
 
         # Determine data type
         dtype = str(series.dtype)
@@ -346,24 +362,22 @@ def generate_data_dictionary(df: pd.DataFrame) -> pd.DataFrame:
         else:
             data_type = 'Text'
 
-        # Sample values
+        # Sample values (show a few representative values)
         uniq = series.dropna().unique()
         if len(uniq) <= 5:
             sample = ', '.join(str(v) for v in uniq[:5])
         else:
-            sample = ', '.join(str(v) for v in uniq[:3]) + f' ... ({n_unique} unique)'
+            sample = ', '.join(str(v) for v in uniq[:3]) + f' … ({n_unique} unique)'
 
         rows.append({
-            'Column': col,
-            'Source_Field': source,
-            'Decoder': decoder,
-            'Description': desc,
-            'Data_Type': data_type,
-            'N_Filled': int(n_filled),
-            'N_Missing': int(n_missing),
+            'Column':         col,
+            'Description':    desc,
+            'Data_Type':      data_type,
             'Completeness_%': pct_complete,
-            'N_Unique': int(n_unique),
-            'Sample_Values': sample[:100],
+            'N_Filled':       n_filled,
+            'N_Missing':      n_missing,
+            'N_Unique':       n_unique,
+            'Sample_Values':  sample[:120],
         })
 
     return pd.DataFrame(rows)
