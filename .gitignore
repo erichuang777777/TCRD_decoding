@@ -1,4 +1,55 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# PATIENT DATA PROTECTION — TOP PRIORITY
+# Any file containing real patient records must NEVER appear in this repository.
+# Rules below provide defence-in-depth: file extension, filename pattern, and
+# directory-level blocks all work independently.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Spreadsheet / database file extensions (any name, any directory) ──────────
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+*.tsv
+*.db
+*.sqlite
+*.sqlite3
+*.mdb
+*.accdb
+*.sav          # SPSS data files
+*.sas7bdat     # SAS data files
+*.dta          # Stata data files
+
+# Allow synthetic test fixtures ONLY (must be generated, never real data)
+!tests/fixtures/*.xlsx
+
+# ── Name-pattern blocks — catch common registry output filenames ───────────────
+decoded_*
+Clinical_Clean*
+Reverse_Verification*
+All_Fields_Decoded*
+*cancer_registry*
+*registry_data*
+*患者*
+*病人*
+*個案*
+
+# ── Explicit sensitive content patterns ───────────────────────────────────────
+*metaplastic*
+*patient_data*
+*patient_info*
+*real_data*
+*PHI*
+*PII*
+*identified*
+*de-identified*
+*deidentified*
+*anonymized*
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Python
+# ═══════════════════════════════════════════════════════════════════════════════
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,38 +60,30 @@ dist/
 build/
 .eggs/
 
-# Virtual environments
+# ── Virtual environments ───────────────────────────────────────────────────────
 .venv/
 venv/
 env/
 .env
 
-# Test & coverage
+# ── Test & coverage ────────────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
 coverage.xml
 
-# IDE
+# ── IDE ────────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
+# ── OS ─────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Project-specific: raw data and outputs (never commit real patient data)
-*.xlsx
-!tests/fixtures/*.xlsx
-decoded_*.xlsx
-Clinical_Clean*.xlsx
-synthetic_*.xlsx
-Reverse_Verification*.xlsx
-
-# Log and cache files
+# ── Log and cache files ────────────────────────────────────────────────────────
 *.log
 *.txt
 *_cache.json
@@ -51,15 +94,10 @@ inspect_log.txt
 llm_decode_log.txt
 vision_decode_log.txt
 
-# Large reference files (use Git LFS if needed)
+# ── Large reference files (use Git LFS if needed) ─────────────────────────────
 pdf_chunks/
 codebook_md/
 
-# Archive of superseded scripts
+# ── Archive of superseded scripts ─────────────────────────────────────────────
+# Entire directory blocked — contains real data files from development phase
 _archive/
-
-# Sensitive / patient-linked data — NEVER commit regardless of location
-*metaplastic*
-*patient_data*
-*real_data*
-*PHI*
