@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Test & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project-specific: raw data and outputs (never commit real patient data)
+*.xlsx
+!tests/fixtures/*.xlsx
+decoded_*.xlsx
+Clinical_Clean*.xlsx
+synthetic_*.xlsx
+Reverse_Verification*.xlsx
+
+# Log and cache files
+*.log
+*.txt
+*_cache.json
+decode_log.txt
+final_log.txt
+general_decode_log.txt
+inspect_log.txt
+llm_decode_log.txt
+vision_decode_log.txt
+
+# Large reference files (use Git LFS if needed)
+pdf_chunks/
+codebook_md/
+
+# Archive of superseded scripts
+_archive/

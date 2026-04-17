@@ -1,0 +1,8 @@
+# Runtime dependencies
+pandas>=1.5
+numpy>=1.23
+openpyxl>=3.1
+
+# Development / testing
+pytest>=7.0
+pytest-cov>=4.0
