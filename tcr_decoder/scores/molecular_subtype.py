@@ -50,7 +50,7 @@ class MolecularSubtype(BaseScore):
     """Intrinsic molecular subtype by surrogate IHC markers (St. Gallen 2013/2015).
 
     Positive cutoffs:
-        ER / PR positive:  percent ≥ 1%      (ASCO/CAP 2010)
+        ER / PR positive:  percent ≥ 1%      (ASCO/CAP 2020 update)
         PR "high" for Lum A:  ≥ 20%           (Prat 2013, St. Gallen 2013/2015)
         Ki67 high:         ≥ 20%             (St. Gallen 2015 consensus)
         HER2 positive:     IHC 3+ or ISH amplified (decoded HER2_Status)
@@ -71,7 +71,7 @@ class MolecularSubtype(BaseScore):
     OUTPUT_COLS = ['Molecular_Subtype']
 
     # Cutoffs
-    HR_POSITIVE_PCT = 1.0     # ASCO/CAP 2010
+    HR_POSITIVE_PCT = 1.0     # ASCO/CAP 2020 update
     PR_HIGH_PCT     = 20.0    # Luminal A (Prat 2013 / St. Gallen 2013/2015)
     KI67_HIGH_PCT   = 20.0    # St. Gallen 2015
 

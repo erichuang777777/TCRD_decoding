@@ -23,9 +23,14 @@ import pandas as pd
 import pytest
 
 from tcr_decoder.core import TCRDecoder
+from tcr_decoder.data_dictionary import generate_data_dictionary
 from tcr_decoder.derived import add_er_pr_percent
 from tcr_decoder.input_validator import validate_input
 from tcr_decoder.scores.base import ScoreRegistry
+from tcr_decoder.validators import (
+    validate_egfr_without_targeted,
+    validate_msi_immunotherapy,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -232,6 +237,18 @@ class TestK5_ColumnWhitespace:
         assert 'whitespace' in warnings_text.lower() or \
                'Whitespace' in warnings_text
 
+    def test_validator_errors_on_even_one_missing_required_raw_field(self):
+        from tcr_decoder.input_validator import REQUIRED_RAW_FIELDS
+        df = pd.DataFrame({
+            f'{field}_raw': ['1']
+            for field in REQUIRED_RAW_FIELDS
+            if field != 'AGE'
+        })
+        result = validate_input(df)
+        assert not result.is_ok
+        assert any(e['Check'] == 'Missing columns' and 'AGE' in e['Detail']
+                   for e in result.errors)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # K6 — Empty DataFrame / header-only file handling
@@ -256,6 +273,75 @@ class TestK6_EmptyInput:
             dec.load(skip_input_check=True)
         assert '0 data rows' in str(exc_info.value) or \
                'contains 0' in str(exc_info.value)
+
+
+class TestK8_ValidationAndReporting:
+    def test_load_blocks_input_validation_errors_by_default(self, tmp_path):
+        path = _write_minimal_tcr(tmp_path, ['001'])
+        dec = TCRDecoder(path)
+        with pytest.raises(ValueError, match='Input validation failed'):
+            dec.load()
+
+    def test_egfr_mutation_validator_matches_decoded_lung_text(self):
+        df = pd.DataFrame({
+            'Patient_ID': ['L001', 'L002', 'L003'],
+            'EGFR_Mutation': [
+                'EGFR - Exon 19 deletion',
+                'EGFR - No mutation (XXX)',
+                'Unknown / not tested',
+            ],
+            'Targeted_This_Hosp': [
+                'No targeted therapy',
+                'No targeted therapy',
+                'No targeted therapy',
+            ],
+        })
+        flags = validate_egfr_without_targeted(df)
+        assert len(flags) == 1
+        assert flags[0]['Patient_ID'] == 'L001'
+
+    def test_egfr_validator_does_not_flag_malformed_code_as_mutation(self):
+        df = pd.DataFrame({
+            'Patient_ID': ['L001'],
+            'EGFR_Mutation': ['EGFR code: QQQ'],
+            'Targeted_This_Hosp': ['No targeted therapy'],
+        })
+        assert validate_egfr_without_targeted(df) == []
+
+    def test_msi_validator_uses_crc_msi_mmr_column(self):
+        df = pd.DataFrame({
+            'Patient_ID': ['C001', 'C002'],
+            'MSI_MMR_Status': [
+                'MSI-H - High instability; or MMR deficient (dMMR)',
+                'MSS / Microsatellite stable; MMR proficient (pMMR)',
+            ],
+            'Immuno_This_Hosp': ['No immunotherapy', 'No immunotherapy'],
+        })
+        flags = validate_msi_immunotherapy(df)
+        assert len(flags) == 1
+        assert flags[0]['Patient_ID'] == 'C001'
+
+    def test_data_dictionary_counts_unknown_and_not_applicable_as_missing(self):
+        df = pd.DataFrame({
+            'ER_Status': [
+                'ER Positive (70%)',
+                'Unknown / not stated',
+                'Not applicable',
+                '',
+            ],
+        })
+        dd = generate_data_dictionary(df)
+        row = dd.iloc[0]
+        assert row['N_Filled'] == 1
+        assert row['N_Missing'] == 3
+        assert row['Completeness_%'] == 25.0
+
+    def test_data_dictionary_handles_zero_rows(self):
+        dd = generate_data_dictionary(pd.DataFrame({'ER_Status': []}))
+        row = dd.iloc[0]
+        assert row['N_Filled'] == 0
+        assert row['N_Missing'] == 0
+        assert row['Completeness_%'] == 0.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

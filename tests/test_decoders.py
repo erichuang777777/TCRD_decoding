@@ -340,3 +340,11 @@ class TestDecodeSmokingTriplet:
     def test_malformed_graceful(self):
         result = decode_smoking_triplet(s(['INVALID']))
         assert isinstance(result.iloc[0], str)
+
+
+class TestDecodeCauseOfDeath:
+
+    def test_decode_cause_of_death_without_generated_mapping_file(self):
+        result = decode_cause_of_death(s(['0', 'C50']))
+        assert result.iloc[0] == 'Non-cancer / Not applicable'
+        assert result.iloc[1] == 'C50'

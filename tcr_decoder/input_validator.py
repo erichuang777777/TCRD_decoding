@@ -120,12 +120,13 @@ def validate_input(df: pd.DataFrame,
             missing_dec.append(field)
 
     if missing_raw:
-        if len(missing_raw) > 10:
-            result.add('ERROR', 'Missing columns',
-                       f'{len(missing_raw)} required raw columns missing: {missing_raw[:5]}...')
-        else:
-            result.add('WARNING', 'Missing columns',
-                       f'{len(missing_raw)} raw columns missing: {missing_raw}')
+        shown = missing_raw[:10]
+        suffix = '...' if len(missing_raw) > len(shown) else ''
+        result.add(
+            'ERROR',
+            'Missing columns',
+            f'{len(missing_raw)} required raw columns missing: {shown}{suffix}',
+        )
     else:
         result.add('INFO', 'Column schema', f'All {len(REQUIRED_RAW_FIELDS)} required fields present')
 

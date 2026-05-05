@@ -28,7 +28,7 @@ This package decodes according to the following official TCR codebooks:
         TNM           (UICC 8th edition for staging fields)
         WHO 2022      (Breast tumour classification, Nottingham grade)
         St. Gallen    (2013/2015 consensus, molecular subtype)
-        ASCO/CAP 2010 (ER/PR/HER2 positivity thresholds)
+        ASCO/CAP      (ER/PR 2020 update; HER2 2023 update)
 
 Quick Start:
     from tcr_decoder import TCRDecoder

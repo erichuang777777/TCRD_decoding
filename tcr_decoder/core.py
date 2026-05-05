@@ -7,11 +7,11 @@ based on the ICD-O-3 topography code (TCODE1).
 
 Supported cancer groups with full custom SSF decoders:
     breast      (C50) — ER/PR/HER2/Ki67/Nottingham
-    lung        (C34) — EGFR/ALK/ROS1/PD-L1/pleural effusion
+    lung        (C34) — nodules/VPI/ECOG/effusion/mediastinal LN/EGFR/ALK
     colorectum  (C18-C21) — CEA/MSI/KRAS/peritoneal mets
     liver       (C22) — AFP/HBV/HCV/Child-Pugh/cirrhosis
-    cervix      (C53) — HPV/parametrial/vaginal extension
-    stomach     (C16) — Lauren/HER2/H.pylori/PD-L1
+    cervix      (C53) — SCC antigen value/status
+    stomach     (C16) — CEA/H.pylori/tumor depth/LVI
     thyroid     (C73) — focality/extrathyroidal/BRAF
     prostate    (C61) — PSA/Gleason/cores/extraprostatic
     nasopharynx (C11) — EBV serology/plasma EBV DNA
@@ -200,7 +200,16 @@ class TCRDecoder:
             for w in self._input_result.warnings:
                 self._log_msg(f'  [WARN]  {w["Check"]}: {w["Detail"]}')
             if not self._input_result.is_ok:
-                self._log_msg('  ⚠ Input has errors — decode may produce incorrect results')
+                detail = '; '.join(
+                    f'{e["Check"]}: {e["Detail"]}'
+                    for e in self._input_result.errors[:5]
+                )
+                raise ValueError(
+                    'Input validation failed. Decode was stopped to avoid '
+                    f'producing incomplete clinical output. {detail}. '
+                    'Pass skip_input_check=True only if you intentionally '
+                    'want permissive decoding.'
+                )
             else:
                 self._log_msg(f'  Input OK ({len(self._input_result.warnings)} warnings)')
         return self

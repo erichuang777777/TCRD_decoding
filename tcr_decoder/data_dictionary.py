@@ -342,10 +342,31 @@ def generate_data_dictionary(df: pd.DataFrame) -> pd.DataFrame:
 
         series = df[col]
         n_total = len(series)
-        n_filled = int(series.dropna().apply(lambda x: str(x).strip() != '').sum())
+        if n_total == 0:
+            rows.append({
+                'Column':         col,
+                'Description':    desc,
+                'Data_Type':      'Text',
+                'Completeness_%': 0.0,
+                'N_Filled':       0,
+                'N_Missing':      0,
+                'N_Unique':       0,
+                'Sample_Values':  '',
+            })
+            continue
+        text = series.astype(object).where(series.notna(), '').astype(str).str.strip()
+        missing_mask = (
+            text.eq('') |
+            text.str.contains(
+                r'\b(?:unknown|not applicable|not stated|not documented|not tested)\b',
+                case=False, regex=True, na=False,
+            )
+        )
+        present = series[~missing_mask]
+        n_filled = int((~missing_mask).sum())
         n_missing = n_total - n_filled
         pct_complete = round(100 * n_filled / n_total, 1)
-        n_unique = int(series.dropna().nunique())
+        n_unique = int(present.dropna().nunique())
 
         # Determine data type
         dtype = str(series.dtype)
@@ -363,7 +384,7 @@ def generate_data_dictionary(df: pd.DataFrame) -> pd.DataFrame:
             data_type = 'Text'
 
         # Sample values (show a few representative values)
-        uniq = series.dropna().unique()
+        uniq = present.dropna().unique()
         if len(uniq) <= 5:
             sample = ', '.join(str(v) for v in uniq[:5])
         else:

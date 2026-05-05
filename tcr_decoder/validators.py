@@ -267,9 +267,9 @@ def validate_missing_data_patterns(df: pd.DataFrame) -> List[Flag]:
         'LVI_SSF': 'LVI (SSF)',
         'Neoadjuvant_Response': 'Neoadjuvant response',
         'EGFR_Mutation': 'EGFR mutation',
-        'ALK_Rearrangement': 'ALK rearrangement',
+        'ALK_Translocation': 'ALK translocation',
         'AFP_Level': 'AFP',
-        'MSI_Status': 'MSI',
+        'MSI_MMR_Status': 'MSI/MMR',
         'PSA_Preop': 'PSA',
         'Gleason_Score': 'Gleason score',
     }
@@ -372,7 +372,21 @@ def validate_egfr_without_targeted(df: pd.DataFrame) -> List[Flag]:
     for idx, row in df.iterrows():
         egfr = str(row.get('EGFR_Mutation', ''))
         targeted = str(row.get('Targeted_This_Hosp', ''))
-        if 'positive' in egfr.lower() and 'No targeted' in targeted:
+        egfr_l = egfr.lower()
+        targeted_l = targeted.lower()
+        mutation_terms = (
+            'exon', 'l858r', 'g719x', 'e709', 's768i', 't790m', 'l861',
+            'other mutation', 'mutated',
+        )
+        mutated = (
+            'egfr' in egfr_l and any(term in egfr_l for term in mutation_terms) and
+            not any(term in egfr_l for term in (
+                'no mutation', 'unknown', 'not tested',
+                'uninterpretable', 'not applicable',
+            ))
+        )
+        no_targeted = 'no targeted' in targeted_l
+        if mutated and no_targeted:
             flags.append({
                 'Patient_ID': str(row['Patient_ID']),
                 'Flag': 'EGFR+ without targeted therapy',
@@ -406,13 +420,18 @@ def validate_afp_hcc(df: pd.DataFrame) -> List[Flag]:
 
 def validate_msi_immunotherapy(df: pd.DataFrame) -> List[Flag]:
     """Flag MSI-H patients without immunotherapy — potential missed indication."""
-    if not _require_cols(df, 'MSI_Status', 'Immuno_This_Hosp'):
+    msi_col = (
+        'MSI_MMR_Status' if 'MSI_MMR_Status' in df.columns
+        else 'MSI_Status' if 'MSI_Status' in df.columns
+        else None
+    )
+    if msi_col is None or not _require_cols(df, 'Immuno_This_Hosp'):
         return []
     flags = []
     for idx, row in df.iterrows():
-        msi = str(row.get('MSI_Status', ''))
+        msi = str(row.get(msi_col, ''))
         immuno = str(row.get('Immuno_This_Hosp', ''))
-        if 'MSI-H' in msi and 'No immuno' in immuno:
+        if 'MSI-H' in msi and 'no immuno' in immuno.lower():
             flags.append({
                 'Patient_ID': str(row['Patient_ID']),
                 'Flag': 'MSI-H without immunotherapy',

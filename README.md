@@ -3,7 +3,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Decode Taiwan Cancer Registry (TCR) raw fields — including all Site-Specific Factors (SSF1–SSF10) — into clinically meaningful English labels. Supports **11 cancer groups** with cancer-specific biomarker decoding.
+Decode Taiwan Cancer Registry (TCR) raw fields — including all Site-Specific Factors (SSF1–SSF10) — into clinically meaningful English labels. Supports **10 named cancer groups** plus a generic fallback profile.
 
 ---
 
@@ -25,7 +25,7 @@ Additional classification systems used:
 | UICC TNM | 8th Edition      | Pathological staging fields (PT/PN/PM) |
 | WHO Classification of Tumours | 2022 (Breast) | Nottingham grade, histology |
 | St. Gallen Consensus | 2013 / 2015 | Molecular subtype (Luminal A/B, HER2-E, TNBC) |
-| ASCO/CAP | 2010 Guidelines | ER/PR/HER2 positivity thresholds (≥1%) |
+| ASCO/CAP | ER/PR 2020 update; HER2 2023 update | ER/PR positivity thresholds and HER2 interpretation context |
 
 > **Version traceability**: `from tcr_decoder import TCR_CODEBOOK_VERSION, TCR_SSF_MANUAL_VERSION`
 
@@ -36,13 +36,13 @@ Additional classification systems used:
 | Group | ICD-O-3 | Key SSF Fields |
 |-------|---------|---------------|
 | **breast** | C50 | ER, PR, HER2, Ki67, Nottingham grade, sentinel LN |
-| **lung** | C34 | EGFR exon, ALK, ROS1, PD-L1% |
+| **lung** | C34 | Separate tumor nodules, visceral pleural invasion, ECOG/KPS, malignant pleural effusion, mediastinal LN sampling, EGFR, ALK |
 | **colorectum** | C18–C21 | CEA, MSI (MSS/MSI-L/MSI-H), KRAS codon |
 | **liver** | C22 | AFP, HBV/HCV, Child-Pugh class |
 | **prostate** | C61 | PSA (×10 format), Gleason score, Grade Group |
-| **stomach** | C16 | Lauren type, H. pylori, HER2 |
-| **thyroid** | C73 | Focality, BRAF, extrathyroidal extension |
-| **cervix** | C53 | HPV, parametrial involvement |
+| **stomach** | C16 | CEA, H. pylori, tumor depth, LVI |
+| **thyroid** | C73 | Focality, vascular invasion, extrathyroidal extension, BRAF/RAS, thyroglobulin |
+| **cervix** | C53 | SCC antigen value and SCC antigen vs normal |
 | **nasopharynx** | C11 | EBV serology, plasma EBV DNA |
 | **endometrium** | C54 | POLE, MMR, p53 (FIGO 2023 molecular) |
 | **generic** | any | Numeric passthrough with sentinel decoding |
@@ -169,12 +169,13 @@ All decoders handle TCR standard sentinel codes:
 - ISH-only era (codes 3xx): `ISH Negative/Positive/Equivocal`
 - IHC+ISH combined era (codes 5xx–6xx): `IHC 2+ + ISH Positive — Positive`
 
-### EGFR (Lung SSF3)
-- Code 1: exon 19 deletion
-- Code 2: exon 21 L858R
-- Code 3: exon 20 insertion
-- Code 4: exon 18 G719X
-- Code 5: other mutation
+### EGFR (Lung SSF6)
+- Three-character alphabetic codes can encode concurrent mutations
+- `A`: exon 19 deletion
+- `B`: exon 21 L858R
+- `E`: exon 20 insertion
+- `D`: exon 18 G719X
+- `X`: no mutation
 
 ---
 
