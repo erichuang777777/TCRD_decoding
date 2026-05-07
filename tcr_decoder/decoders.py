@@ -8,7 +8,7 @@ with clean English clinical labels.
 import re
 import pandas as pd
 import numpy as np
-from tcr_decoder.utils import strip_float_suffix
+from tcr_decoder.utils import strip_float_suffix, _norm
 
 
 # ─── ER / PR (SSF1, SSF2) ──────────────────────────────────────────
@@ -20,8 +20,8 @@ def decode_er_pr(raw_series: pd.Series, receptor: str) -> pd.Series:
     Codes: 000-100 (%), W/I/S prefix (staining), 110-121 (special), 888/988/999
     """
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         special = {
             '988': 'Not applicable (Oncotype/Phyllodes/Sarcoma)',
@@ -60,8 +60,8 @@ def decode_ki67(raw_series: pd.Series) -> pd.Series:
     Codes: 000-100 (%), A00-A09 (sub-1%), 988/998/999
     """
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         special = {
             '888': 'Not applicable (conversion)',
@@ -154,8 +154,8 @@ def decode_her2(raw_series: pd.Series) -> pd.Series:
     }
 
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         if v in HER2_MAP:
             return HER2_MAP[v]
@@ -176,8 +176,8 @@ def decode_nottingham(raw_series: pd.Series) -> pd.Series:
     Codes: 030-090 (score×10), 110-130 (grade only), 988/999
     """
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         special = {'888': 'Not applicable (conversion)', '988': 'Not applicable', '999': 'Unknown'}
         if v in special:
@@ -232,8 +232,8 @@ def decode_ssf3_neoadj(raw_series: pd.Series) -> pd.Series:
     }
 
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         if v in MAP:
             return MAP[v]
@@ -260,8 +260,8 @@ def decode_ebrt_additive(raw_series: pd.Series) -> pd.Series:
     }
 
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         if v in ('-9', '999'):
             return 'Unknown'
@@ -295,8 +295,8 @@ def decode_sentinel(raw_series: pd.Series, kind: str) -> pd.Series:
     kind: 'examined' or 'positive'
     """
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         special = {
             '888': 'Not applicable (conversion)',
@@ -322,8 +322,8 @@ def decode_sentinel(raw_series: pd.Series, kind: str) -> pd.Series:
 def decode_lnpositive(raw_series: pd.Series) -> pd.Series:
     """Decode LN_POSITI field with sentinel codes."""
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() == 'nan':
+        v = _norm(v)
+        if not v:
             return ''
         special = {
             '95': 'Positive LN, count not applicable',
@@ -348,8 +348,8 @@ def decode_cause_of_death(series: pd.Series) -> pd.Series:
     diecause_map = CODE_MAPPINGS.get('DIECAUSE', {})
 
     def _decode(v):
-        v = strip_float_suffix(str(v).strip())
-        if not v or v.lower() in ('nan', ''):
+        v = _norm(v)
+        if not v:
             return ''
         # Try direct lookup
         from tcr_decoder.utils import clean_text

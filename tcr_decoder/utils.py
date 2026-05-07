@@ -6,7 +6,7 @@ These are pure functions with no side effects — safe to call on any data.
 import re
 import pandas as pd
 import numpy as np
-from typing import Optional
+from typing import Callable, Dict, Optional
 
 
 def strip_float_suffix(v: str) -> str:
@@ -183,3 +183,31 @@ def shorten_tnm(series: pd.Series) -> pd.Series:
             return m.group(1)
         return v
     return series.fillna('').astype(str).apply(_shorten)
+
+
+def _norm(v) -> str:
+    """Normalize a raw value: strip float suffix, return '' for nan/empty."""
+    v = strip_float_suffix(str(v).strip())
+    return '' if (not v or v.lower() == 'nan') else v
+
+
+def _map_decode(
+    code_map: Dict[int, str],
+    fallback: str = 'Code',
+) -> Callable:
+    """Factory: return a Series decoder for integer-keyed lookup maps.
+
+    Eliminates the repeated _d() closure pattern across SSF decoder functions.
+    Handles NaN, float-coded integers, and unknown codes uniformly.
+    """
+    def _decoder(series: pd.Series) -> pd.Series:
+        def _d(val) -> str:
+            if pd.isna(val) or str(val).strip() in ('', 'nan'):
+                return ''
+            try:
+                iv = int(float(str(val).strip()))
+            except (ValueError, TypeError):
+                return str(val).strip()
+            return code_map.get(iv, f'{fallback} {iv}')
+        return series.apply(_d)
+    return _decoder

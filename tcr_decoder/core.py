@@ -61,6 +61,7 @@ from tcr_decoder.validators import run_all_validators
 from tcr_decoder.input_validator import validate_input
 from tcr_decoder.derived import add_structural_derived
 from tcr_decoder.data_dictionary import generate_data_dictionary, apply_tcr_labels
+from tcr_decoder.report import generate_summary_report, _format_summary_sheet
 
 logger = logging.getLogger('tcr_decoder')
 
@@ -649,7 +650,13 @@ class TCRDecoder:
             # Sheet 2: Clinical Flags (data-quality warnings for analysts)
             self._flags_df.to_excel(writer, sheet_name='Clinical_Flags', index=False)
 
-            # Sheet 3: Subtype / Biomarker Summary (cancer-type aware)
+            # Sheet 3: Statistical Summary — demographics, stage, treatment, survival
+            _grp = self.cancer_group or 'generic'
+            _summary = generate_summary_report(self._clean_df, cancer_group=_grp)
+            _summary.to_excel(writer, sheet_name='Statistical_Summary', index=False)
+            _format_summary_sheet(writer.sheets['Statistical_Summary'])
+
+            # Sheet 4: Subtype / Biomarker Summary (cancer-type aware)
             _grp = self.cancer_group or 'generic'
             sub_col = 'Molecular_Subtype'
             if sub_col in self._clean_df.columns:
@@ -681,7 +688,7 @@ class TCRDecoder:
         self._log_msg(f'  SAVED: {out_path.name} ({kb:.0f} KB)')
         self._log_msg(f'  Cancer group: {self.cancer_group or "generic"}')
         self._log_msg(f'  Sheets: Clinical_Clean, Clinical_Flags, '
-                      f'Subtype_Summary, Data_Dictionary, Pipeline_Log')
+                      f'Statistical_Summary, Subtype_Summary, Data_Dictionary, Pipeline_Log')
         return out_path
 
     def run(self, output_path: Union[str, Path], scores: bool = True) -> Path:
