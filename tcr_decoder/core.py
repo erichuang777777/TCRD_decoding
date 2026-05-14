@@ -691,20 +691,53 @@ class TCRDecoder:
                       f'Statistical_Summary, Subtype_Summary, Data_Dictionary, Pipeline_Log')
         return out_path
 
-    def run(self, output_path: Union[str, Path], scores: bool = True) -> Path:
-        """One-liner: load → decode → [score] → validate → export.
+    def export_eda(self, output_path: Union[str, Path]) -> Path:
+        """Generate an interactive HTML EDA report (requires dataprep).
+
+        Parameters
+        ----------
+        output_path : str | Path
+            Destination path for the HTML report.
+
+        Returns
+        -------
+        Path
+            Resolved path of the saved HTML file.
+
+        Notes
+        -----
+        Install dataprep with: pip install dataprep
+        """
+        if self._clean_df is None:
+            raise RuntimeError('Call decode() before export_eda()')
+        from tcr_decoder.eda import generate_eda_report
+        _grp = self.cancer_group or 'generic'
+        out = generate_eda_report(self._clean_df, output_path, cancer_group=_grp)
+        self._log_msg(f'  EDA report: {out.name}')
+        return out
+
+    def run(self, output_path: Union[str, Path], scores: bool = True,
+            eda: bool = False) -> Path:
+        """One-liner: load → decode → [score] → validate → export → [eda].
 
         Parameters
         ----------
         scores : bool
             If True (default), also compute clinical prognostic scores via
             ClinicalScoreEngine (Module 2).  Set False to decode only.
+        eda : bool
+            If True, also generate an interactive HTML EDA report alongside
+            the Excel output (requires dataprep: pip install dataprep).
+            The report is saved next to ``output_path`` with ``.html`` extension.
         """
         self.load().decode()
         if scores:
             self.decode_with_scores()
         self.validate()
-        return self.export(output_path)
+        out = self.export(output_path)
+        if eda:
+            self.export_eda(Path(output_path).with_suffix('.html'))
+        return out
 
     @property
     def clean(self) -> pd.DataFrame:

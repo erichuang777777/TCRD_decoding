@@ -6,3 +6,7 @@ openpyxl>=3.1
 # Development / testing
 pytest>=7.0
 pytest-cov>=4.0
+
+# Optional — interactive HTML EDA report (TCRDecoder.export_eda / run(eda=True))
+# pip install dataprep
+# dataprep>=0.4
