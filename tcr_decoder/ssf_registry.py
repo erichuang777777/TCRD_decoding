@@ -34,6 +34,21 @@ from tcr_decoder.utils import _map_decode
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Shared sentinel codes (merged into every cancer-specific _map_decode decoder)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SENTINEL_CODES: Dict[int, str] = {
+    888: 'Not applicable',
+    900: 'Not documented in patient record',
+    901: 'Not assessed / unknown if assessed',
+    902: 'Not physically performed',
+    988: 'Not applicable (pre-2018 cases)',
+    998: 'No information available',
+    999: 'Unknown / not documented',
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Data structures
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -146,6 +161,7 @@ def _decode_lvi(series: pd.Series) -> pd.Series:
 def _decode_lung_ssf1_nodules(series: pd.Series) -> pd.Series:
     """SSF1 for lung: Separate tumor nodules / ipsilateral lung."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'No separate ipsilateral tumor nodules; in situ',
         10:  'Separate nodule(s) — ipsilateral same lobe',
         20:  'Separate nodule(s) — ipsilateral different lobe',
@@ -158,6 +174,7 @@ def _decode_lung_ssf1_nodules(series: pd.Series) -> pd.Series:
 def _decode_lung_ssf2_vpi(series: pd.Series) -> pd.Series:
     """SSF2 for lung: Visceral pleural invasion (PL0-PL3)."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'PL0 — No visceral pleural invasion (elastic layer not reached)',
         10:  'PL1 — Invasion to elastic layer of visceral pleura',
         20:  'PL2 — Invasion to surface of visceral pleura',
@@ -171,6 +188,7 @@ def _decode_lung_ssf2_vpi(series: pd.Series) -> pd.Series:
 def _decode_lung_ssf3_ecog(series: pd.Series) -> pd.Series:
     """SSF3 for lung: Performance status (ECOG/KPS) before treatment."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'ECOG 0 — Fully active (KPS 100)',
         1:   'ECOG 1 — Light work only (KPS 80-90)',
         2:   'ECOG 2 — Self-care, up >50% of day (KPS 60-70)',
@@ -186,6 +204,7 @@ def _decode_lung_ssf3_ecog(series: pd.Series) -> pd.Series:
 def _decode_lung_ssf4_pleural_effusion(series: pd.Series) -> pd.Series:
     """SSF4 for lung: Malignant pleural effusion."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'No malignant pleural effusion (imaging/cytology negative; or non-malignant cause confirmed)',
         11:  'Imaging: effusion present; no cytology; physician considers malignant',
         12:  'Imaging: effusion present; cytology negative/atypical; physician considers malignant',
@@ -261,6 +280,7 @@ def _decode_lung_egfr(series: pd.Series) -> pd.Series:
 def _decode_lung_alk(series: pd.Series) -> pd.Series:
     """SSF7 for lung: ALK gene translocation."""
     return _map_decode({
+        **_SENTINEL_CODES,
         10:  'ALK positive — rearrangement/translocation present',
         20:  'ALK negative — no rearrangement',
         30:  'ALK test performed; result uninterpretable',
@@ -274,6 +294,7 @@ def _decode_lung_ssf8_adeno(series: pd.Series) -> pd.Series:
     Codes are additive bitmask: micropapillary=1, solid=2, cribriform=4.
     """
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'None of: micropapillary / solid / cribriform components',
         1:   'Micropapillary only',
         2:   'Solid only',
@@ -370,6 +391,7 @@ def _decode_cea(series: pd.Series) -> pd.Series:
 def _decode_msi(series: pd.Series) -> pd.Series:
     """Microsatellite instability (MSI) status."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'MSS — Microsatellite stable',
         1:   'MSI-L — Low instability',
         2:   'MSI-H — High instability',
@@ -383,6 +405,7 @@ def _decode_msi(series: pd.Series) -> pd.Series:
 def _decode_kras(series: pd.Series) -> pd.Series:
     """KRAS mutation status."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'KRAS wild-type (no mutation)',
         1:   'KRAS mutated; codon 12',
         2:   'KRAS mutated; codon 13',
@@ -439,6 +462,7 @@ def _decode_liver_afp(series: pd.Series) -> pd.Series:
 def _decode_liver_fibrosis(series: pd.Series) -> pd.Series:
     """SSF2 for liver: Liver fibrosis grade (Ishak score)."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'Ishak F0 — No fibrosis',
         1:   'Ishak F1 — Some portal areas expanded; short fibrous septa',
         2:   'Ishak F2 — Most portal areas expanded; short fibrous septa',
@@ -529,6 +553,7 @@ def _decode_liver_inr(series: pd.Series) -> pd.Series:
 def _decode_hbsag(series: pd.Series) -> pd.Series:
     """SSF7 for liver: HBsAg (hepatitis B surface antigen) with history."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'Not tested; no HBV carrier history',
         1:   'Not tested; HBV carrier history documented',
         10:  'Negative; no HBV carrier history',
@@ -541,6 +566,7 @@ def _decode_hbsag(series: pd.Series) -> pd.Series:
 def _decode_anti_hcv(series: pd.Series) -> pd.Series:
     """SSF8 for liver: Anti-HCV (hepatitis C antibody/antigen/RNA) with history."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'Not tested; no HCV infection history',
         1:   'Not tested; HCV infection history documented',
         10:  'Negative; no HCV infection history',
@@ -590,6 +616,7 @@ def _decode_psa(series: pd.Series) -> pd.Series:
 def _decode_gleason(series: pd.Series) -> pd.Series:
     """Gleason score for prostate cancer (sum of primary + secondary)."""
     return _map_decode({
+        **_SENTINEL_CODES,
         2:  'Gleason Score 2 (1+1) — Grade Group 1',
         3:  'Gleason Score 3 (1+2 or 2+1) — Grade Group 1',
         4:  'Gleason Score 4 (2+2) — Grade Group 1',
@@ -611,6 +638,7 @@ def _decode_gleason(series: pd.Series) -> pd.Series:
 def _decode_thyroid_focality(series: pd.Series) -> pd.Series:
     """Tumor focality for thyroid cancer."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'Unifocal tumor',
         1:   'Multifocal tumor; ipsilateral lobe only',
         2:   'Multifocal tumor; bilateral lobes',
@@ -625,6 +653,7 @@ def _decode_thyroid_focality(series: pd.Series) -> pd.Series:
 def _decode_extrathyroidal(series: pd.Series) -> pd.Series:
     """Extrathyroidal extension for thyroid cancer."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'No extrathyroidal extension',
         1:   'Minimal/microscopic extrathyroidal extension (T3b)',
         2:   'Gross extrathyroidal extension — strap muscles (T4a)',
@@ -669,6 +698,7 @@ def _decode_cea_lab_value(series: pd.Series) -> pd.Series:
 def _decode_cea_normal(series: pd.Series) -> pd.Series:
     """CEA vs. normal range (SSF2 for stomach/colorectum/pancreas)."""
     return _map_decode({
+        **_SENTINEL_CODES,
         10:  'CEA positive — above normal range',
         20:  'CEA negative — within normal range',
         30:  'CEA borderline — uncertain positive/negative',
@@ -680,6 +710,7 @@ def _decode_cea_normal(series: pd.Series) -> pd.Series:
 def _decode_h_pylori(series: pd.Series) -> pd.Series:
     """SSF3 for stomach: H. pylori infection status and detection method."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'H. pylori negative (all tests)',
         1:   'H. pylori positive — histology',
         2:   'H. pylori positive — bacterial culture',
@@ -698,6 +729,7 @@ def _decode_h_pylori(series: pd.Series) -> pd.Series:
 def _decode_stomach_lvi(series: pd.Series) -> pd.Series:
     """SSF5 for stomach: Lymphovascular invasion (LVI)."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'No lymphovascular invasion',
         10:  'Lymphovascular invasion present',
         988: 'Not applicable',
@@ -753,6 +785,7 @@ def _decode_ras_mutation(series: pd.Series) -> pd.Series:
 def _decode_msi_crc(series: pd.Series) -> pd.Series:
     """SSF10 for colorectum: MSI/MMR status."""
     return _map_decode({
+        **_SENTINEL_CODES,
         0:   'MSS / Microsatellite stable; MMR proficient (pMMR)',
         10:  'MSI-L — Low instability',
         20:  'MSI-H — High instability; or MMR deficient (dMMR)',
@@ -764,6 +797,7 @@ def _decode_msi_crc(series: pd.Series) -> pd.Series:
 def _decode_scc_antigen_normal(series: pd.Series) -> pd.Series:
     """SSF2 for cervix: SCC antigen vs. normal range."""
     return _map_decode({
+        **_SENTINEL_CODES,
         10:  'SCC antigen positive — above normal range',
         20:  'SCC antigen negative — within normal range',
         30:  'SCC antigen borderline',

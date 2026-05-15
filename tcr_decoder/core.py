@@ -691,6 +691,31 @@ class TCRDecoder:
                       f'Statistical_Summary, Subtype_Summary, Data_Dictionary, Pipeline_Log')
         return out_path
 
+    def export_html(self, output_path: Union[str, Path]) -> Path:
+        """Generate an interactive HTML data browser (Bootstrap + DataTables).
+
+        Parameters
+        ----------
+        output_path : str | Path
+            Destination path for the HTML file.
+
+        Returns
+        -------
+        Path
+            Resolved path of the saved HTML file.
+
+        Notes
+        -----
+        Requires internet access to load Bootstrap 5 and DataTables from CDN.
+        """
+        if self._clean_df is None:
+            raise RuntimeError('Call decode() before export_html()')
+        from tcr_decoder.html_report import generate_html_report
+        _grp = self.cancer_group or 'generic'
+        out = generate_html_report(self._clean_df, output_path, cancer_group=_grp)
+        self._log_msg(f'  HTML browser: {out.name}')
+        return out
+
     def export_eda(self, output_path: Union[str, Path]) -> Path:
         """Generate an interactive HTML EDA report (requires dataprep).
 
@@ -717,26 +742,32 @@ class TCRDecoder:
         return out
 
     def run(self, output_path: Union[str, Path], scores: bool = True,
-            eda: bool = False) -> Path:
-        """One-liner: load → decode → [score] → validate → export → [eda].
+            html: bool = False, eda: bool = False) -> Path:
+        """One-liner: load → decode → [score] → validate → export → [html/eda].
 
         Parameters
         ----------
         scores : bool
             If True (default), also compute clinical prognostic scores via
             ClinicalScoreEngine (Module 2).  Set False to decode only.
+        html : bool
+            If True, also generate an interactive HTML data browser alongside
+            the Excel output.  Saved next to ``output_path`` with ``.html``
+            extension.  Requires internet access for CDN assets.
         eda : bool
-            If True, also generate an interactive HTML EDA report alongside
-            the Excel output (requires dataprep: pip install dataprep).
-            The report is saved next to ``output_path`` with ``.html`` extension.
+            If True, also generate a dataprep EDA profiling report (requires
+            ``pip install dataprep``).  Saved with ``_eda.html`` suffix.
         """
         self.load().decode()
         if scores:
             self.decode_with_scores()
         self.validate()
         out = self.export(output_path)
+        if html:
+            self.export_html(Path(output_path).with_suffix('.html'))
         if eda:
-            self.export_eda(Path(output_path).with_suffix('.html'))
+            self.export_eda(Path(output_path).with_name(
+                Path(output_path).stem + '_eda.html'))
         return out
 
     @property
