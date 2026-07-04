@@ -338,4 +338,8 @@ LVI 不存在:                                  → SSF9 = 0
 - [ ] 完成 AJCC 8th 完整 stage group 表（T × N × M 組合）
 - [ ] 收集各合作醫院常見手術縮寫對照表
 - [ ] 定義 LLM extraction prompt template（基於本規格）
-- [ ] 建立 Python 規則引擎（基於本規格）
+- [x] 建立 Python 規則引擎（基於本規格）— 見 `tcr_decoder/encoders.py`
+      （`encode_er_pr`、`encode_ki67`、`encode_her2`、`encode_nottingham`、
+      `encode_ssf3_neoadj`、`encode_sentinel`）與 `tcr_decoder.TCREncoder`。
+      本規格中定義的 SSF1–SSF10 編碼規則已全數對應到程式碼，並有
+      `tests/test_encoders.py` 的往返（round-trip）測試驗證。

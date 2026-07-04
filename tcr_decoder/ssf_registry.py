@@ -31,6 +31,8 @@ import pandas as pd
 import numpy as np
 
 from tcr_decoder.utils import _map_decode
+from tcr_decoder.codemap import CodeMap
+from tcr_decoder import encoders as _enc
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ class SSFFieldDef:
     description: str        # clinical description
     decoder: Optional[Callable] = None   # custom decoder; None → generic numeric
     unit: str = ''          # unit string for display (e.g., 'ng/mL', '%')
+    encoder: Optional[Callable] = None   # inverse of decoder; None → generic numeric encode
 
 
 @dataclass
@@ -131,89 +134,107 @@ def _breast_ssf_decoder_factory():
     }
 
 
+_PAGET_MAP = CodeMap({
+    0:   'No Paget disease',
+    10:  'Paget disease present',
+    888: 'Not applicable (conversion)',
+    988: 'Not applicable (specimen excludes nipple/areola)',
+    999: 'Unknown / not documented',
+})
+
+
 def _decode_paget(series: pd.Series) -> pd.Series:
     """SSF8 for breast: Paget disease of the nipple."""
-    return _map_decode({
-        0:   'No Paget disease',
-        10:  'Paget disease present',
-        888: 'Not applicable (conversion)',
-        988: 'Not applicable (specimen excludes nipple/areola)',
-        999: 'Unknown / not documented',
-    })(series)
+    return _PAGET_MAP.decode(series)
+
+
+_LVI_BREAST_MAP = CodeMap({
+    0:   'No lymphovascular invasion',
+    10:  'Lymphovascular invasion present',
+    888: 'Not applicable (conversion)',
+    988: 'Not applicable',
+    990: 'No residual tumor (LVI not assessable after neoadjuvant therapy)',
+    999: 'Unknown / not documented',
+})
 
 
 def _decode_lvi(series: pd.Series) -> pd.Series:
     """SSF9 for breast: Lymphovascular invasion (LVI)."""
-    return _map_decode({
-        0:   'No lymphovascular invasion',
-        10:  'Lymphovascular invasion present',
-        888: 'Not applicable (conversion)',
-        988: 'Not applicable',
-        990: 'No residual tumor (LVI not assessable after neoadjuvant therapy)',
-        999: 'Unknown / not documented',
-    })(series)
+    return _LVI_BREAST_MAP.decode(series)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Lung-cancer SSF decoders
 # ─────────────────────────────────────────────────────────────────────────────
 
+_LUNG_SSF1_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'No separate ipsilateral tumor nodules; in situ',
+    10:  'Separate nodule(s) — ipsilateral same lobe',
+    20:  'Separate nodule(s) — ipsilateral different lobe',
+    30:  'Separate nodule(s) — both same and different lobe (ipsilateral)',
+    40:  'Separate nodule(s) — ipsilateral, lobe unknown',
+    999: 'Unknown / not documented',
+})
+
+
 def _decode_lung_ssf1_nodules(series: pd.Series) -> pd.Series:
     """SSF1 for lung: Separate tumor nodules / ipsilateral lung."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'No separate ipsilateral tumor nodules; in situ',
-        10:  'Separate nodule(s) — ipsilateral same lobe',
-        20:  'Separate nodule(s) — ipsilateral different lobe',
-        30:  'Separate nodule(s) — both same and different lobe (ipsilateral)',
-        40:  'Separate nodule(s) — ipsilateral, lobe unknown',
-        999: 'Unknown / not documented',
-    })(series)
+    return _LUNG_SSF1_MAP.decode(series)
+
+
+_LUNG_SSF2_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'PL0 — No visceral pleural invasion (elastic layer not reached)',
+    10:  'PL1 — Invasion to elastic layer of visceral pleura',
+    20:  'PL2 — Invasion to surface of visceral pleura',
+    30:  'PL3 — Invasion through to parietal pleura',
+    40:  'Pleural invasion present; PL level not specified',
+    988: 'Not applicable (no surgery to primary site)',
+    999: 'Unknown / not documented',
+})
 
 
 def _decode_lung_ssf2_vpi(series: pd.Series) -> pd.Series:
     """SSF2 for lung: Visceral pleural invasion (PL0-PL3)."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'PL0 — No visceral pleural invasion (elastic layer not reached)',
-        10:  'PL1 — Invasion to elastic layer of visceral pleura',
-        20:  'PL2 — Invasion to surface of visceral pleura',
-        30:  'PL3 — Invasion through to parietal pleura',
-        40:  'Pleural invasion present; PL level not specified',
-        988: 'Not applicable (no surgery to primary site)',
-        999: 'Unknown / not documented',
-    })(series)
+    return _LUNG_SSF2_MAP.decode(series)
+
+
+_LUNG_SSF3_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'ECOG 0 — Fully active (KPS 100)',
+    1:   'ECOG 1 — Light work only (KPS 80-90)',
+    2:   'ECOG 2 — Self-care, up >50% of day (KPS 60-70)',
+    3:   'ECOG 3 — Limited self-care, confined >50% of day (KPS 40-50)',
+    4:   'ECOG 4 — Completely disabled (KPS 10-30)',
+    5:   'ECOG 5 — Death (KPS 0)',
+    988: 'Not applicable',
+    998: 'Not assessed',
+    999: 'Unknown / not documented',
+})
 
 
 def _decode_lung_ssf3_ecog(series: pd.Series) -> pd.Series:
     """SSF3 for lung: Performance status (ECOG/KPS) before treatment."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'ECOG 0 — Fully active (KPS 100)',
-        1:   'ECOG 1 — Light work only (KPS 80-90)',
-        2:   'ECOG 2 — Self-care, up >50% of day (KPS 60-70)',
-        3:   'ECOG 3 — Limited self-care, confined >50% of day (KPS 40-50)',
-        4:   'ECOG 4 — Completely disabled (KPS 10-30)',
-        5:   'ECOG 5 — Death (KPS 0)',
-        988: 'Not applicable',
-        998: 'Not assessed',
-        999: 'Unknown / not documented',
-    })(series)
+    return _LUNG_SSF3_MAP.decode(series)
+
+
+_LUNG_SSF4_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'No malignant pleural effusion (imaging/cytology negative; or non-malignant cause confirmed)',
+    11:  'Imaging: effusion present; no cytology; physician considers malignant',
+    12:  'Imaging: effusion present; cytology negative/atypical; physician considers malignant',
+    13:  'Cytology confirmed malignant pleural effusion',
+    14:  'Imaging: effusion present; no cytology; physician does NOT consider malignant',
+    15:  'Imaging: effusion present; cytology negative/atypical; physician does NOT consider malignant',
+    988: 'Not applicable — M0 case',
+    999: 'Unknown / not documented',
+})
 
 
 def _decode_lung_ssf4_pleural_effusion(series: pd.Series) -> pd.Series:
     """SSF4 for lung: Malignant pleural effusion."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'No malignant pleural effusion (imaging/cytology negative; or non-malignant cause confirmed)',
-        11:  'Imaging: effusion present; no cytology; physician considers malignant',
-        12:  'Imaging: effusion present; cytology negative/atypical; physician considers malignant',
-        13:  'Cytology confirmed malignant pleural effusion',
-        14:  'Imaging: effusion present; no cytology; physician does NOT consider malignant',
-        15:  'Imaging: effusion present; cytology negative/atypical; physician does NOT consider malignant',
-        988: 'Not applicable — M0 case',
-        999: 'Unknown / not documented',
-    })(series)
+    return _LUNG_SSF4_MAP.decode(series)
 
 
 def _decode_lung_ssf5_mediastinal(series: pd.Series) -> pd.Series:
@@ -235,6 +256,22 @@ def _decode_lung_ssf5_mediastinal(series: pd.Series) -> pd.Series:
     return series.apply(_d)
 
 
+_LUNG_EGFR_LETTER_MAP = {
+    'A': 'Exon 19 deletion',
+    'B': 'Exon 21 L858R',
+    'C': 'Exon 18 E709',
+    'D': 'Exon 18 G719X',
+    'E': 'Exon 20 insertion',
+    'F': 'Exon 20 S768I',
+    'G': 'Exon 20 T790M',
+    'H': 'Exon 21 L861',
+    'U': 'Other mutation',
+    'V': 'Mutated (type NOS)',
+    'X': 'No mutation',
+    'Z': 'Uninterpretable result',
+}
+
+
 def _decode_lung_egfr(series: pd.Series) -> pd.Series:
     """SSF6 for lung: EGFR gene mutation (3-character alphabetic code).
 
@@ -245,20 +282,6 @@ def _decode_lung_egfr(series: pd.Series) -> pd.Series:
       X=no mutation  Z=uninterpretable
     Sentinels: 999 = unknown / not tested
     """
-    LETTER_MAP = {
-        'A': 'Exon 19 deletion',
-        'B': 'Exon 21 L858R',
-        'C': 'Exon 18 E709',
-        'D': 'Exon 18 G719X',
-        'E': 'Exon 20 insertion',
-        'F': 'Exon 20 S768I',
-        'G': 'Exon 20 T790M',
-        'H': 'Exon 21 L861',
-        'U': 'Other mutation',
-        'V': 'Mutated (type NOS)',
-        'X': 'No mutation',
-        'Z': 'Uninterpretable result',
-    }
     def _d(val):
         if pd.isna(val) or str(val).strip() in ('', 'nan'):
             return ''
@@ -266,26 +289,44 @@ def _decode_lung_egfr(series: pd.Series) -> pd.Series:
         if s in ('999', ''):
             return 'Unknown / not tested'
         if len(s) == 3:
-            mutations = [LETTER_MAP.get(c, f'?({c})') for c in s if c != 'X']
+            mutations = [_LUNG_EGFR_LETTER_MAP.get(c, f'?({c})') for c in s if c != 'X']
             if not mutations:
                 return 'EGFR — No mutation (XXX)'
             return 'EGFR — ' + ' + '.join(mutations)
         # Single letter or numeric fallback
-        if s in LETTER_MAP:
-            return 'EGFR — ' + LETTER_MAP[s]
+        if s in _LUNG_EGFR_LETTER_MAP:
+            return 'EGFR — ' + _LUNG_EGFR_LETTER_MAP[s]
         return f'EGFR code: {val}'
     return series.apply(_d)
 
 
+_LUNG_ALK_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    10:  'ALK positive — rearrangement/translocation present',
+    20:  'ALK negative — no rearrangement',
+    30:  'ALK test performed; result uninterpretable',
+    999: 'Unknown / not tested / no ALK test ordered',
+})
+
+
 def _decode_lung_alk(series: pd.Series) -> pd.Series:
     """SSF7 for lung: ALK gene translocation."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        10:  'ALK positive — rearrangement/translocation present',
-        20:  'ALK negative — no rearrangement',
-        30:  'ALK test performed; result uninterpretable',
-        999: 'Unknown / not tested / no ALK test ordered',
-    })(series)
+    return _LUNG_ALK_MAP.decode(series)
+
+
+_LUNG_SSF8_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'None of: micropapillary / solid / cribriform components',
+    1:   'Micropapillary only',
+    2:   'Solid only',
+    3:   'Micropapillary + Solid',
+    4:   'Cribriform / complex gland only',
+    5:   'Micropapillary + Cribriform',
+    6:   'Solid + Cribriform',
+    7:   'Micropapillary + Solid + Cribriform',
+    988: 'Not applicable (CIS; non-NM adenocarcinoma; no curative surgery; neoadjuvant before surgery)',
+    999: 'Unknown / not documented',
+})
 
 
 def _decode_lung_ssf8_adeno(series: pd.Series) -> pd.Series:
@@ -293,19 +334,7 @@ def _decode_lung_ssf8_adeno(series: pd.Series) -> pd.Series:
 
     Codes are additive bitmask: micropapillary=1, solid=2, cribriform=4.
     """
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'None of: micropapillary / solid / cribriform components',
-        1:   'Micropapillary only',
-        2:   'Solid only',
-        3:   'Micropapillary + Solid',
-        4:   'Cribriform / complex gland only',
-        5:   'Micropapillary + Cribriform',
-        6:   'Solid + Cribriform',
-        7:   'Micropapillary + Solid + Cribriform',
-        988: 'Not applicable (CIS; non-NM adenocarcinoma; no curative surgery; neoadjuvant before surgery)',
-        999: 'Unknown / not documented',
-    })(series)
+    return _LUNG_SSF8_MAP.decode(series)
 
 
 def _decode_lung_ssf9_nodules(series: pd.Series) -> pd.Series:
@@ -388,33 +417,39 @@ def _decode_cea(series: pd.Series) -> pd.Series:
     return series.apply(_d)
 
 
+_MSI_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'MSS — Microsatellite stable',
+    1:   'MSI-L — Low instability',
+    2:   'MSI-H — High instability',
+    8:   'Not applicable (Lynch syndrome excluded by other means)',
+    9:   'MSI equivocal / inconclusive',
+    988: 'Not applicable',
+    999: 'Unknown; not tested',
+})
+
+
 def _decode_msi(series: pd.Series) -> pd.Series:
     """Microsatellite instability (MSI) status."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'MSS — Microsatellite stable',
-        1:   'MSI-L — Low instability',
-        2:   'MSI-H — High instability',
-        8:   'Not applicable (Lynch syndrome excluded by other means)',
-        9:   'MSI equivocal / inconclusive',
-        988: 'Not applicable',
-        999: 'Unknown; not tested',
-    })(series)
+    return _MSI_MAP.decode(series)
+
+
+_KRAS_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'KRAS wild-type (no mutation)',
+    1:   'KRAS mutated; codon 12',
+    2:   'KRAS mutated; codon 13',
+    3:   'KRAS mutated; codon 12 and codon 13',
+    4:   'KRAS mutated; NOS (codon not specified)',
+    9:   'KRAS equivocal',
+    988: 'Not applicable',
+    999: 'Unknown; not tested',
+})
 
 
 def _decode_kras(series: pd.Series) -> pd.Series:
     """KRAS mutation status."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'KRAS wild-type (no mutation)',
-        1:   'KRAS mutated; codon 12',
-        2:   'KRAS mutated; codon 13',
-        3:   'KRAS mutated; codon 12 and codon 13',
-        4:   'KRAS mutated; NOS (codon not specified)',
-        9:   'KRAS equivocal',
-        988: 'Not applicable',
-        999: 'Unknown; not tested',
-    })(series)
+    return _KRAS_MAP.decode(series)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -431,9 +466,15 @@ def _decode_liver_afp(series: pd.Series) -> pd.Series:
         if pd.isna(val) or str(val).strip() in ('', 'nan'):
             return ''
         s = str(val).strip().upper()
-        # Alphabetic A-codes (2021+ only): A00-A99 = 1-99 ng/mL
+        # Alphabetic A-codes (2021+ only): A01-A99 = actual integer 1-99 ng/mL;
+        # A00 specifically means "<1 ng/mL" (e.g. an actual value of 0.91
+        # ng/mL is coded A00), not literally zero/undetectable -- per
+        # Cancer-SSF-Manual (liver SSF1, p.81): "AFP檢驗結果實際數值為0.91
+        # ng/ml，請編碼A00".
         if len(s) == 3 and s[0] == 'A' and s[1:].isdigit():
             num = int(s[1:])
+            if num == 0:
+                return 'AFP <1 ng/mL (A-code, 2021+ scheme)'
             return f'AFP {num} ng/mL (A-code, 2021+ scheme)'
         try:
             iv = int(float(s))
@@ -459,22 +500,44 @@ def _decode_liver_afp(series: pd.Series) -> pd.Series:
     return series.apply(_d)
 
 
+_LIVER_FIBROSIS_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'Ishak F0 — No fibrosis',
+    1:   'Ishak F1 — Some portal areas expanded; short fibrous septa',
+    2:   'Ishak F2 — Most portal areas expanded; short fibrous septa',
+    3:   'Ishak F3 — Most portal areas expanded; occasional P-P bridging',
+    4:   'Ishak F4 — Marked P-P and P-C bridging',
+    5:   'Ishak F5 — Marked bridging with occasional nodules (incomplete cirrhosis)',
+    6:   'Ishak F6 — Cirrhosis (probable or definite)',
+    7:   'No pathology report; imaging (US/CT/MRI) shows cirrhosis',
+    8:   'No pathology report; imaging (US/CT/MRI) shows no cirrhosis',
+    988: 'Not applicable (no accessible pathology or imaging data)',
+    999: 'Unknown / Ishak score not used',
+})
+
+
 def _decode_liver_fibrosis(series: pd.Series) -> pd.Series:
     """SSF2 for liver: Liver fibrosis grade (Ishak score)."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'Ishak F0 — No fibrosis',
-        1:   'Ishak F1 — Some portal areas expanded; short fibrous septa',
-        2:   'Ishak F2 — Most portal areas expanded; short fibrous septa',
-        3:   'Ishak F3 — Most portal areas expanded; occasional P-P bridging',
-        4:   'Ishak F4 — Marked P-P and P-C bridging',
-        5:   'Ishak F5 — Marked bridging with occasional nodules (incomplete cirrhosis)',
-        6:   'Ishak F6 — Cirrhosis (probable or definite)',
-        7:   'No pathology report; imaging (US/CT/MRI) shows cirrhosis',
-        8:   'No pathology report; imaging (US/CT/MRI) shows no cirrhosis',
-        988: 'Not applicable (no accessible pathology or imaging data)',
-        999: 'Unknown / Ishak score not used',
-    })(series)
+    return _LIVER_FIBROSIS_MAP.decode(series)
+
+
+_CHILD_PUGH_MAP = CodeMap({
+    105: 'Child-Pugh Class A, Score 5',
+    106: 'Child-Pugh Class A, Score 6',
+    199: 'Child-Pugh Class A, Score unknown',
+    207: 'Child-Pugh Class B, Score 7',
+    208: 'Child-Pugh Class B, Score 8',
+    209: 'Child-Pugh Class B, Score 9',
+    299: 'Child-Pugh Class B, Score unknown',
+    310: 'Child-Pugh Class C, Score 10',
+    311: 'Child-Pugh Class C, Score 11',
+    312: 'Child-Pugh Class C, Score 12',
+    313: 'Child-Pugh Class C, Score 13',
+    314: 'Child-Pugh Class C, Score 14',
+    315: 'Child-Pugh Class C, Score 15',
+    399: 'Child-Pugh Class C, Score unknown',
+    999: 'Class and score both unknown / not assessed',
+}, fallback='Child-Pugh code')
 
 
 def _decode_child_pugh(series: pd.Series) -> pd.Series:
@@ -483,23 +546,7 @@ def _decode_child_pugh(series: pd.Series) -> pd.Series:
     3-char code: first digit = class (1=A, 2=B, 3=C),
     next two = score (05-15) or 99 for class only.
     """
-    return _map_decode({
-        105: 'Child-Pugh Class A, Score 5',
-        106: 'Child-Pugh Class A, Score 6',
-        199: 'Child-Pugh Class A, Score unknown',
-        207: 'Child-Pugh Class B, Score 7',
-        208: 'Child-Pugh Class B, Score 8',
-        209: 'Child-Pugh Class B, Score 9',
-        299: 'Child-Pugh Class B, Score unknown',
-        310: 'Child-Pugh Class C, Score 10',
-        311: 'Child-Pugh Class C, Score 11',
-        312: 'Child-Pugh Class C, Score 12',
-        313: 'Child-Pugh Class C, Score 13',
-        314: 'Child-Pugh Class C, Score 14',
-        315: 'Child-Pugh Class C, Score 15',
-        399: 'Child-Pugh Class C, Score unknown',
-        999: 'Class and score both unknown / not assessed',
-    }, fallback='Child-Pugh code')(series)
+    return _CHILD_PUGH_MAP.decode(series)
 
 
 def _decode_lab_value_10x(series: pd.Series, analyte: str, unit: str) -> pd.Series:
@@ -550,30 +597,36 @@ def _decode_liver_inr(series: pd.Series) -> pd.Series:
     return series.apply(_d)
 
 
+_HBSAG_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'Not tested; no HBV carrier history',
+    1:   'Not tested; HBV carrier history documented',
+    10:  'Negative; no HBV carrier history',
+    11:  'Negative; HBV carrier history documented',
+    20:  'Positive',
+    999: 'Unknown / not documented',
+})
+
+
 def _decode_hbsag(series: pd.Series) -> pd.Series:
     """SSF7 for liver: HBsAg (hepatitis B surface antigen) with history."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'Not tested; no HBV carrier history',
-        1:   'Not tested; HBV carrier history documented',
-        10:  'Negative; no HBV carrier history',
-        11:  'Negative; HBV carrier history documented',
-        20:  'Positive',
-        999: 'Unknown / not documented',
-    })(series)
+    return _HBSAG_MAP.decode(series)
+
+
+_ANTI_HCV_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'Not tested; no HCV infection history',
+    1:   'Not tested; HCV infection history documented',
+    10:  'Negative; no HCV infection history',
+    11:  'Negative; HCV infection history (treated / SVR)',
+    20:  'Positive (Anti-HCV positive and/or HCV RNA positive)',
+    999: 'Unknown / not documented',
+})
 
 
 def _decode_anti_hcv(series: pd.Series) -> pd.Series:
     """SSF8 for liver: Anti-HCV (hepatitis C antibody/antigen/RNA) with history."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'Not tested; no HCV infection history',
-        1:   'Not tested; HCV infection history documented',
-        10:  'Negative; no HCV infection history',
-        11:  'Negative; HCV infection history (treated / SVR)',
-        20:  'Positive (Anti-HCV positive and/or HCV RNA positive)',
-        999: 'Unknown / not documented',
-    })(series)
+    return _ANTI_HCV_MAP.decode(series)
 
 
 def _decode_hbv_hcv(series: pd.Series, virus: str = 'HBV') -> pd.Series:
@@ -592,8 +645,22 @@ def _decode_hbv_hcv(series: pd.Series, virus: str = 'HBV') -> pd.Series:
 # Prostate SSF decoders
 # ─────────────────────────────────────────────────────────────────────────────
 
+_PSA_TIER_MAP = {
+    981: (98.0, 199.9), 982: (200.0, 299.9), 983: (300.0, 399.9),
+    984: (400.0, 499.9), 985: (500.0, 599.9), 986: (600.0, 699.9),
+    987: (700.0, 799.9), 989: (800.0, 899.9), 990: (900.0, 999.9),
+}
+_PSA_THOUSANDS_MAP = {991: 1, 992: 2, 993: 3, 994: 4, 995: 5, 996: 6, 997: 7}
+
+
 def _decode_psa(series: pd.Series) -> pd.Series:
-    """PSA (prostate-specific antigen) in ng/mL."""
+    """PSA (prostate-specific antigen) in ng/mL.
+
+    Codebook: Cancer-SSF-Manual (prostate), SSF1, p.177-178.
+    001-979 = value x10 (0.2-97.9 ng/mL). 980 = 98.0 ng/mL (legacy code,
+    dx year 100-104 only). 981-990 = 100-wide tiers from 98.0-999.9 ng/mL.
+    991-997 = 1000-wide tiers from 1000-7999 ng/mL. 998 = >=8000 ng/mL.
+    """
     def _d(val):
         if pd.isna(val) or str(val).strip() in ('', 'nan'):
             return ''
@@ -605,64 +672,83 @@ def _decode_psa(series: pd.Series) -> pd.Series:
             return 'PSA <0.1 ng/mL (undetectable)'
         if iv == 988:
             return 'Not applicable'
+        if iv == 998:
+            return 'PSA >=8000 ng/mL'
         if iv == 999:
             return 'Unknown; not documented'
-        if 1 <= iv <= 980:
-            return f'PSA {iv/10:.1f} ng/mL'   # stored as ×10
+        if iv == 980:
+            return 'PSA 98.0 ng/mL (legacy code, dx year 100-104 only)'
+        if iv in _PSA_TIER_MAP:
+            lo, hi = _PSA_TIER_MAP[iv]
+            return f'PSA {lo:.1f}-{hi:.1f} ng/mL'
+        if iv in _PSA_THOUSANDS_MAP:
+            k = _PSA_THOUSANDS_MAP[iv]
+            return f'PSA {k * 1000}-{k * 1000 + 999} ng/mL'
+        if 1 <= iv <= 979:
+            return f'PSA {iv/10:.1f} ng/mL'
         return f'Code {iv}'
     return series.apply(_d)
 
 
+_GLEASON_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    2:  'Gleason Score 2 (1+1) — Grade Group 1',
+    3:  'Gleason Score 3 (1+2 or 2+1) — Grade Group 1',
+    4:  'Gleason Score 4 (2+2) — Grade Group 1',
+    5:  'Gleason Score 5 — Grade Group 1',
+    6:  'Gleason Score 6 (3+3) — Grade Group 1',
+    7:  'Gleason Score 7 (3+4 or 4+3) — Grade Group 2 or 3',
+    8:  'Gleason Score 8 (4+4, 3+5, or 5+3) — Grade Group 4',
+    9:  'Gleason Score 9 (4+5, 5+4) — Grade Group 5',
+    10: 'Gleason Score 10 (5+5) — Grade Group 5',
+    88: 'Not applicable',
+    99: 'Unknown; not documented',
+}, fallback='Gleason Score')
+
+
 def _decode_gleason(series: pd.Series) -> pd.Series:
     """Gleason score for prostate cancer (sum of primary + secondary)."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        2:  'Gleason Score 2 (1+1) — Grade Group 1',
-        3:  'Gleason Score 3 (1+2 or 2+1) — Grade Group 1',
-        4:  'Gleason Score 4 (2+2) — Grade Group 1',
-        5:  'Gleason Score 5 — Grade Group 1',
-        6:  'Gleason Score 6 (3+3) — Grade Group 1',
-        7:  'Gleason Score 7 (3+4 or 4+3) — Grade Group 2 or 3',
-        8:  'Gleason Score 8 (4+4, 3+5, or 5+3) — Grade Group 4',
-        9:  'Gleason Score 9 (4+5, 5+4) — Grade Group 5',
-        10: 'Gleason Score 10 (5+5) — Grade Group 5',
-        88: 'Not applicable',
-        99: 'Unknown; not documented',
-    }, fallback='Gleason Score')(series)
+    return _GLEASON_MAP.decode(series)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Thyroid SSF decoders
 # ─────────────────────────────────────────────────────────────────────────────
 
+_THYROID_FOCALITY_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'Unifocal tumor',
+    1:   'Multifocal tumor; ipsilateral lobe only',
+    2:   'Multifocal tumor; bilateral lobes',
+    3:   'Multifocal tumor; isthmus involved',
+    8:   'Not applicable (total thyroidectomy not performed)',
+    9:   'Unknown; not documented',
+    988: 'Not applicable',
+    999: 'Unknown',
+})
+
+
 def _decode_thyroid_focality(series: pd.Series) -> pd.Series:
     """Tumor focality for thyroid cancer."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'Unifocal tumor',
-        1:   'Multifocal tumor; ipsilateral lobe only',
-        2:   'Multifocal tumor; bilateral lobes',
-        3:   'Multifocal tumor; isthmus involved',
-        8:   'Not applicable (total thyroidectomy not performed)',
-        9:   'Unknown; not documented',
-        988: 'Not applicable',
-        999: 'Unknown',
-    })(series)
+    return _THYROID_FOCALITY_MAP.decode(series)
+
+
+_EXTRATHYROIDAL_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'No extrathyroidal extension',
+    1:   'Minimal/microscopic extrathyroidal extension (T3b)',
+    2:   'Gross extrathyroidal extension — strap muscles (T4a)',
+    3:   'Gross extrathyroidal extension — major structures (T4b)',
+    8:   'Not applicable',
+    9:   'Unknown',
+    988: 'Not applicable',
+    999: 'Unknown',
+})
 
 
 def _decode_extrathyroidal(series: pd.Series) -> pd.Series:
     """Extrathyroidal extension for thyroid cancer."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'No extrathyroidal extension',
-        1:   'Minimal/microscopic extrathyroidal extension (T3b)',
-        2:   'Gross extrathyroidal extension — strap muscles (T4a)',
-        3:   'Gross extrathyroidal extension — major structures (T4b)',
-        8:   'Not applicable',
-        9:   'Unknown',
-        988: 'Not applicable',
-        999: 'Unknown',
-    })(series)
+    return _EXTRATHYROIDAL_MAP.decode(series)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -695,47 +781,69 @@ def _decode_cea_lab_value(series: pd.Series) -> pd.Series:
     return series.apply(_d)
 
 
+_CEA_NORMAL_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    10:  'CEA positive — above normal range',
+    20:  'CEA negative — within normal range',
+    30:  'CEA borderline — uncertain positive/negative',
+    988: 'Not applicable',
+    999: 'Unknown / CEA not tested',
+})
+
+
 def _decode_cea_normal(series: pd.Series) -> pd.Series:
     """CEA vs. normal range (SSF2 for stomach/colorectum/pancreas)."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        10:  'CEA positive — above normal range',
-        20:  'CEA negative — within normal range',
-        30:  'CEA borderline — uncertain positive/negative',
-        988: 'Not applicable',
-        999: 'Unknown / CEA not tested',
-    })(series)
+    return _CEA_NORMAL_MAP.decode(series)
+
+
+_H_PYLORI_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'H. pylori negative (all tests)',
+    1:   'H. pylori positive — histology',
+    2:   'H. pylori positive — bacterial culture',
+    3:   'H. pylori positive — rapid urease test (RUT)',
+    4:   'H. pylori positive — serology (antibody)',
+    5:   'H. pylori positive — urea breath test (UBT)',
+    6:   'H. pylori positive — stool antigen (HpSA)',
+    7:   'H. pylori positive — PCR',
+    8:   'H. pylori positive — method not specified',
+    10:  'H. pylori positive — >=2 methods confirmed',
+    988: 'Not applicable (GIST or NETs)',
+    999: 'Unknown / not tested',
+})
 
 
 def _decode_h_pylori(series: pd.Series) -> pd.Series:
     """SSF3 for stomach: H. pylori infection status and detection method."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'H. pylori negative (all tests)',
-        1:   'H. pylori positive — histology',
-        2:   'H. pylori positive — bacterial culture',
-        3:   'H. pylori positive — rapid urease test (RUT)',
-        4:   'H. pylori positive — serology (antibody)',
-        5:   'H. pylori positive — urea breath test (UBT)',
-        6:   'H. pylori positive — stool antigen (HpSA)',
-        7:   'H. pylori positive — PCR',
-        8:   'H. pylori positive — method not specified',
-        10:  'H. pylori positive — >=2 methods confirmed',
-        988: 'Not applicable (GIST or NETs)',
-        999: 'Unknown / not tested',
-    })(series)
+    return _H_PYLORI_MAP.decode(series)
+
+
+_STOMACH_LVI_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'No lymphovascular invasion',
+    10:  'Lymphovascular invasion present',
+    988: 'Not applicable',
+    990: 'No residual tumor (LVI not assessable after neoadjuvant)',
+    999: 'Unknown / not documented',
+})
 
 
 def _decode_stomach_lvi(series: pd.Series) -> pd.Series:
     """SSF5 for stomach: Lymphovascular invasion (LVI)."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'No lymphovascular invasion',
-        10:  'Lymphovascular invasion present',
-        988: 'Not applicable',
-        990: 'No residual tumor (LVI not assessable after neoadjuvant)',
-        999: 'Unknown / not documented',
-    })(series)
+    return _STOMACH_LVI_MAP.decode(series)
+
+
+_RAS_KRAS_NRAS_MAP = {
+    '0': 'wild-type',
+    '1': 'Codon 12 mutation',
+    '2': 'Codon 13 mutation',
+    '3': 'Codon 61 mutation',
+    '4': 'Multi-codon mutation (>=2 codons, >=1 of 12/13/61)',
+    '5': 'Non-12/13/61 mutation',
+    '6': 'Mutated (codon NOS)',
+    '7': 'Uninterpretable',
+    '9': 'Not tested',
+}
 
 
 def _decode_ras_mutation(series: pd.Series) -> pd.Series:
@@ -747,17 +855,7 @@ def _decode_ras_mutation(series: pd.Series) -> pd.Series:
     Position 3 = always '8' (filler)
     Special: 988=N/A(GIST/NETs/no external data), 998=not documented/not tested
     """
-    KRAS_NRAS = {
-        '0': 'wild-type',
-        '1': 'Codon 12 mutation',
-        '2': 'Codon 13 mutation',
-        '3': 'Codon 61 mutation',
-        '4': 'Multi-codon mutation (>=2 codons, >=1 of 12/13/61)',
-        '5': 'Non-12/13/61 mutation',
-        '6': 'Mutated (codon NOS)',
-        '7': 'Uninterpretable',
-        '9': 'Not tested',
-    }
+    KRAS_NRAS = _RAS_KRAS_NRAS_MAP
     def _d(val):
         if pd.isna(val) or str(val).strip() in ('', 'nan'):
             return ''
@@ -782,28 +880,34 @@ def _decode_ras_mutation(series: pd.Series) -> pd.Series:
     return series.apply(_d)
 
 
+_MSI_CRC_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    0:   'MSS / Microsatellite stable; MMR proficient (pMMR)',
+    10:  'MSI-L — Low instability',
+    20:  'MSI-H — High instability; or MMR deficient (dMMR)',
+    988: 'Not applicable (GIST/NETs/high-grade dysplasia or no external data)',
+    999: 'Unknown / not tested; MSI indeterminate/equivocal',
+})
+
+
 def _decode_msi_crc(series: pd.Series) -> pd.Series:
     """SSF10 for colorectum: MSI/MMR status."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        0:   'MSS / Microsatellite stable; MMR proficient (pMMR)',
-        10:  'MSI-L — Low instability',
-        20:  'MSI-H — High instability; or MMR deficient (dMMR)',
-        988: 'Not applicable (GIST/NETs/high-grade dysplasia or no external data)',
-        999: 'Unknown / not tested; MSI indeterminate/equivocal',
-    })(series)
+    return _MSI_CRC_MAP.decode(series)
+
+
+_SCC_ANTIGEN_NORMAL_MAP = CodeMap({
+    **_SENTINEL_CODES,
+    10:  'SCC antigen positive — above normal range',
+    20:  'SCC antigen negative — within normal range',
+    30:  'SCC antigen borderline',
+    988: 'Not applicable',
+    999: 'Unknown / not tested',
+})
 
 
 def _decode_scc_antigen_normal(series: pd.Series) -> pd.Series:
     """SSF2 for cervix: SCC antigen vs. normal range."""
-    return _map_decode({
-        **_SENTINEL_CODES,
-        10:  'SCC antigen positive — above normal range',
-        20:  'SCC antigen negative — within normal range',
-        30:  'SCC antigen borderline',
-        988: 'Not applicable',
-        999: 'Unknown / not tested',
-    })(series)
+    return _SCC_ANTIGEN_NORMAL_MAP.decode(series)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -841,9 +945,9 @@ def _build_profiles() -> Dict[str, SSFProfile]:
             'SSF7':  SSFFieldDef('SSF7', 'HER2_Status', 'HER2 IHC+ISH combined status',
                                  decoder=_bd['SSF7']),
             'SSF8':  SSFFieldDef('SSF8', 'Pagets_Disease', "Paget's disease of nipple",
-                                 decoder=None),
+                                 decoder=_bd['SSF8']),
             'SSF9':  SSFFieldDef('SSF9', 'LVI_SSF', 'Lymphovascular invasion (SSF source)',
-                                 decoder=None),
+                                 decoder=_bd['SSF9']),
             'SSF10': SSFFieldDef('SSF10', 'Ki67_Index', 'Ki-67 proliferation index',
                                  decoder=_bd['SSF10']),
         },
@@ -862,7 +966,7 @@ def _build_profiles() -> Dict[str, SSFProfile]:
             'SSF2':  SSFFieldDef('SSF2', 'Visceral_Pleural_Invasion',
                                  'Visceral pleural invasion (PL0-PL3)',
                                  decoder=_decode_lung_ssf2_vpi),
-            'SSF3':  SSFFieldDef('SSF3', 'Performance_Status',
+            'SSF3':  SSFFieldDef('SSF3', 'Performance_Status_SSF3',
                                  'Performance status (ECOG/KPS) before treatment',
                                  decoder=_decode_lung_ssf3_ecog),
             'SSF4':  SSFFieldDef('SSF4', 'Malignant_Pleural_Effusion',
@@ -1238,6 +1342,76 @@ def _build_profiles() -> Dict[str, SSFProfile]:
 # Build profiles once at module load
 _PROFILES: Dict[str, SSFProfile] = _build_profiles()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wire encoders (inverse of decoders) onto each profile field.
+#
+# CodeMap-backed fields get their CodeMap's .encode for free -- decode and
+# encode read the exact same dict, so they can never drift apart. Bespoke
+# composite/scaled/combinatorial fields (ER/PR, HER2, Ki-67, AFP, EGFR, RAS,
+# ...) use the matching encode_* function from tcr_decoder.encoders, which
+# mirrors the corresponding decode_*/​_decode_* function's exact output
+# format. Fields with no custom decoder (decoder=None) fall back to
+# encode_generic_ssf in apply_ssf_encode_profile, mirroring how
+# apply_ssf_profile() falls back to _generic_ssf for decoding them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ENCODER_WIRING: Dict[Tuple[str, str], Callable] = {
+    ('breast', 'SSF1'):  lambda s: _enc.encode_er_pr(s, 'ER'),
+    ('breast', 'SSF2'):  lambda s: _enc.encode_er_pr(s, 'PR'),
+    ('breast', 'SSF3'):  _enc.encode_ssf3_neoadj,
+    ('breast', 'SSF4'):  lambda s: _enc.encode_sentinel(s, kind='examined'),
+    ('breast', 'SSF5'):  lambda s: _enc.encode_sentinel(s, kind='positive'),
+    ('breast', 'SSF6'):  _enc.encode_nottingham,
+    ('breast', 'SSF7'):  _enc.encode_her2,
+    ('breast', 'SSF8'):  _PAGET_MAP.encode,
+    ('breast', 'SSF9'):  _LVI_BREAST_MAP.encode,
+    ('breast', 'SSF10'): _enc.encode_ki67,
+
+    ('lung', 'SSF1'): _LUNG_SSF1_MAP.encode,
+    ('lung', 'SSF2'): _LUNG_SSF2_MAP.encode,
+    ('lung', 'SSF3'): _LUNG_SSF3_MAP.encode,
+    ('lung', 'SSF4'): _LUNG_SSF4_MAP.encode,
+    ('lung', 'SSF5'): _enc.encode_lung_ssf5_mediastinal,
+    ('lung', 'SSF6'): _enc.encode_lung_egfr,
+    ('lung', 'SSF7'): _LUNG_ALK_MAP.encode,
+    ('lung', 'SSF8'): _LUNG_SSF8_MAP.encode,
+    ('lung', 'SSF9'): _enc.encode_lung_ssf9_nodules,
+
+    ('colorectum', 'SSF1'):  _enc.encode_cea_lab_value,
+    ('colorectum', 'SSF2'):  _CEA_NORMAL_MAP.encode,
+    ('colorectum', 'SSF6'):  _enc.encode_ras_mutation,
+    ('colorectum', 'SSF10'): _MSI_CRC_MAP.encode,
+
+    ('liver', 'SSF1'): _enc.encode_liver_afp,
+    ('liver', 'SSF2'): _LIVER_FIBROSIS_MAP.encode,
+    ('liver', 'SSF3'): _CHILD_PUGH_MAP.encode,
+    ('liver', 'SSF4'): lambda s: _enc.encode_lab_value_10x(s, 'Creatinine', 'mg/dL'),
+    ('liver', 'SSF5'): lambda s: _enc.encode_lab_value_10x(s, 'Total bilirubin', 'mg/dL'),
+    ('liver', 'SSF6'): _enc.encode_liver_inr,
+    ('liver', 'SSF7'): _HBSAG_MAP.encode,
+    ('liver', 'SSF8'): _ANTI_HCV_MAP.encode,
+
+    ('cervix', 'SSF2'): _SCC_ANTIGEN_NORMAL_MAP.encode,
+
+    ('stomach', 'SSF1'): _enc.encode_cea_lab_value,
+    ('stomach', 'SSF2'): _CEA_NORMAL_MAP.encode,
+    ('stomach', 'SSF3'): _H_PYLORI_MAP.encode,
+    ('stomach', 'SSF5'): _STOMACH_LVI_MAP.encode,
+
+    ('thyroid', 'SSF1'): _THYROID_FOCALITY_MAP.encode,
+    ('thyroid', 'SSF3'): _EXTRATHYROIDAL_MAP.encode,
+
+    ('prostate', 'SSF1'): _enc.encode_psa,
+    ('prostate', 'SSF2'): _GLEASON_MAP.encode,
+
+    ('endometrium', 'SSF7'): _MSI_MAP.encode,
+}
+
+for (_grp, _ssf_key), _encoder_fn in _ENCODER_WIRING.items():
+    _PROFILES[_grp].fields[_ssf_key].encoder = _encoder_fn
+
+
 # Reverse lookup: ICD-O-3 prefix → cancer_group
 _CODE_TO_GROUP: Dict[str, str] = {}
 for _group, _profile in _PROFILES.items():
@@ -1387,6 +1561,45 @@ def apply_ssf_profile(df: pd.DataFrame, cancer_group: str) -> pd.DataFrame:
             decoded = _generic_ssf(df[raw_col], field_name=ssf_key, unit=field_def.unit)
 
         df[field_def.column_name] = decoded
+
+    return df
+
+
+def apply_ssf_encode_profile(
+    df: pd.DataFrame, cancer_group: str, on_error: str = 'raise',
+) -> pd.DataFrame:
+    """Apply the appropriate SSF encoders to a DataFrame -- the inverse of
+    apply_ssf_profile().
+
+    Args:
+        df: DataFrame with decoded SSF columns (named per SSFFieldDef.column_name,
+            e.g. 'ER_Status', 'HER2_Status', ...) -- i.e. a TCRDecoder.clean-shaped
+            DataFrame for this cancer_group.
+        cancer_group: Cancer group string from detect_cancer_group()
+        on_error: 'raise' (default) to fail loudly on the first unrecognized
+            label (a typo or a label this tool never produced), or 'empty'
+            to blank out just that cell and keep going -- used by
+            best-effort batch tooling like compare_roundtrip.
+
+    Returns:
+        DataFrame with raw SSF1_raw … SSF10_raw code columns added.
+    """
+    df = df.copy()
+    profile = get_ssf_profile(cancer_group)
+
+    for ssf_key, field_def in profile.fields.items():
+        col = field_def.column_name
+        if col not in df.columns:
+            continue
+
+        series = df[col].astype(str).replace('nan', '')
+        if field_def.encoder is not None:
+            encoded = _enc.batch_encode(field_def.encoder, series, on_error=on_error)
+        else:
+            encoded = _enc.batch_encode(
+                lambda s: _enc.encode_generic_ssf(s, unit=field_def.unit), series, on_error=on_error)
+
+        df[f'{ssf_key}_raw'] = encoded
 
     return df
 

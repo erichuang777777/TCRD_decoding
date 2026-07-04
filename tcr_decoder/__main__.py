@@ -19,6 +19,10 @@ Usage:
 
     # Show SSF field definitions for a cancer group
     python -m tcr_decoder --ssf-info lung
+
+    # Round-trip check: decode a registry file, re-encode it, and diff
+    # against the original raw codes (see docs/使用指南.md)
+    python -m tcr_decoder registry.xlsx --roundtrip
 """
 
 import sys
@@ -91,6 +95,26 @@ def cmd_synth(cancer: str, n: int, seed: int, out: str, decode: bool):
         dec.load(skip_input_check=True).decode().validate().export(clean_path)
         _print_flags(dec.flags)
         print(f'\n✓ Clean data: {clean_path}')
+
+
+def cmd_roundtrip(input_path: str, output_path: str, sheet: str, cancer_group: str):
+    """Decode a registry file, re-encode it, and report round-trip mismatches."""
+    from tcr_decoder.roundtrip import export_roundtrip_report
+    inp = Path(input_path)
+    if not inp.exists():
+        print(f'ERROR: Input file not found: {input_path}')
+        sys.exit(1)
+
+    out = output_path or inp.stem + '_roundtrip.xlsx'
+    out_path = export_roundtrip_report(
+        inp, out, cancer_group=cancer_group if cancer_group else None, sheet_name=sheet)
+
+    import pandas as pd
+    mismatches = pd.read_excel(str(out_path), sheet_name='Mismatches')
+    print(f'\n  Round-trip report saved to: {out_path}')
+    print(f'  Mismatches found: {len(mismatches)}')
+    if len(mismatches):
+        print('  (see the Mismatches / Field_Summary / Notes sheets for detail)')
 
 
 def cmd_decode(input_path: str, output_path: str, sheet: str,
@@ -181,6 +205,9 @@ examples:
                         help='Force cancer group instead of auto-detecting from TCODE1')
     parser.add_argument('--validate-only', action='store_true',
                         help='Run validation only, do not export output file')
+    parser.add_argument('--roundtrip', action='store_true',
+                        help='Decode then re-encode the input, and report where '
+                             'the raw codes do not round-trip exactly')
 
     # Synth mode args
     parser.add_argument('--n', type=int, default=100,
@@ -203,6 +230,9 @@ examples:
     elif args.synth:
         cmd_synth(cancer=args.synth, n=args.n, seed=args.seed,
                   out=args.out, decode=args.decode)
+    elif args.input and args.roundtrip:
+        cmd_roundtrip(input_path=args.input, output_path=args.output,
+                     sheet=args.sheet, cancer_group=args.cancer)
     elif args.input:
         cmd_decode(input_path=args.input, output_path=args.output,
                    sheet=args.sheet, cancer_group=args.cancer,

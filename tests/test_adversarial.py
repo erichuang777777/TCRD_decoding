@@ -18,6 +18,7 @@ Categories:
 """
 
 import time
+import warnings
 import pytest
 import pandas as pd
 import numpy as np
@@ -354,9 +355,11 @@ class TestICDO3EdgeCases:
 
     def test_series_all_same_group(self):
         homog = pd.Series(['C50.1', 'C50.2', 'C50.9'])
-        with pytest.warns(None) as rec:
+        with warnings.catch_warnings():
+            # pytest.warns(None) (old "assert no warning" idiom) was removed
+            # in pytest 8+; simplefilter('error') gives the same guarantee.
+            warnings.simplefilter('error')
             group = detect_cancer_group_from_series(homog)
-        # Ideally no UserWarning for a uniform series
         assert group == 'breast'
 
     def test_series_empty_returns_generic(self):

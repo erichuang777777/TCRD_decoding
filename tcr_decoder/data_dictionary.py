@@ -286,6 +286,7 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'ALK_Translocation':          '8.7',
     'Separate_Tumor_Nodules':     '8.1',
     'Visceral_Pleural_Invasion':  '8.2',
+    'Performance_Status_SSF3':    '8.3',
     'AFP_Level':                  '8.1',
     'Liver_Fibrosis_Ishak':       '8.2',
     'Child_Pugh_Score':           '8.3',
