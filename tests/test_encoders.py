@@ -132,6 +132,18 @@ class TestEncodeErPr:
         assert dec.iloc[0] == '150'
         assert enc.iloc[0] == '150'
 
+    def test_out_of_range_staining_percent_not_silently_wrapped(self):
+        """Regression: decode_er_pr()'s staining regex has no upper bound on
+        the digit run, so an already-malformed 'S150' decodes leniently to
+        "Strong staining, 150%". encode_er_pr used to compute `pct % 100`
+        when reconstructing the code, which silently WRAPPED this into a
+        different, wrong value ('S150' -> 'S50') instead of preserving it --
+        found during code review. It must now round-trip exactly."""
+        dec, enc = _roundtrip(['S150'], lambda s: decode_er_pr(s, 'ER'),
+                              lambda s: encode_er_pr(s, 'ER'))
+        assert dec.iloc[0] == 'ER Positive (Strong staining, 150%)'
+        assert enc.iloc[0] == 'S150'
+
     def test_pr_uses_pr_vocabulary(self):
         dec, enc = _roundtrip([70], lambda s: decode_er_pr(s, 'PR'),
                               lambda s: encode_er_pr(s, 'PR'))
@@ -232,6 +244,18 @@ class TestEncodeLNPositive:
         dec, enc = _roundtrip([code], decode_lnpositive, encode_lnpositive)
         assert enc.iloc[0] == str(code)
 
+    def test_98_collides_with_95_known_not_a_bug(self):
+        """decode_lnpositive's own special dict maps both '95' and '98' to
+        the identical text 'Positive LN, count not applicable' -- the same
+        kind of codebook-level label collision as KNOWN_LABEL_COLLISIONS
+        elsewhere (found during code review; documented here instead of
+        silently surfacing as an unexplained compare_roundtrip mismatch).
+        encode_lnpositive canonicalizes to '95' (first-listed)."""
+        label_95 = decode_lnpositive(pd.Series(['95'])).iloc[0]
+        label_98 = decode_lnpositive(pd.Series(['98'])).iloc[0]
+        assert label_95 == label_98
+        assert encode_lnpositive(pd.Series([label_98])).iloc[0] == '95'
+
 
 class TestEncodeEBRT:
     @pytest.mark.parametrize('code', [0, 1, 2, 3, 4, 5, 7, 8, 16, 32, 64, 127])
@@ -285,6 +309,20 @@ class TestEncodeColorectumFields:
     def test_ras_mutation_roundtrip(self, code):
         dec, enc = _roundtrip([code], _decode_ras_mutation, encode_ras_mutation)
         assert enc.iloc[0] == code
+
+    def test_filler_digit_9_collides_with_8_known_not_a_bug(self):
+        """_decode_ras_mutation's own leniency accepts either '8' or '9' as
+        the 3rd (filler) digit (`s[2] in ('8', '9')`), but the decoded label
+        never records which one it was -- decode('119') and decode('118')
+        produce identical text (found during code review). encode_ras_mutation
+        always reconstructs the codebook-documented filler '8', so a raw
+        code ending in '9' does not round-trip byte-identical; this is
+        expected label-collision behavior, not a bug, and is pinned here
+        instead of surfacing as an unexplained compare_roundtrip mismatch."""
+        label_118 = _decode_ras_mutation(pd.Series(['118'])).iloc[0]
+        label_119 = _decode_ras_mutation(pd.Series(['119'])).iloc[0]
+        assert label_118 == label_119
+        assert encode_ras_mutation(pd.Series([label_119])).iloc[0] == '118'
 
 
 class TestEncodeLiverFields:
@@ -524,6 +562,49 @@ class TestCompareRoundtrip:
         mismatches = compare_roundtrip(str(xlsx))
         for _, row in mismatches.iterrows():
             assert {row['Original_Code'], row['Roundtrip_Code']} <= {'888', '988'}
+
+    def test_all_zero_code_is_not_a_false_positive_mismatch(self):
+        """Regression: '000' and '0' both decode to the same structural label
+        (e.g. STYPE95's 'No surgery'), and encode canonicalizes back to '0'.
+        The old `lstrip('0')` comparison excluded the all-zero case (both
+        sides strip to '') via a `!= ''` guard meant to stop blank cells
+        from matching non-blank ones, so '000' vs '0' was reported as a
+        mismatch even though it's a harmless leading-zero difference --
+        found during code review."""
+        from tcr_decoder.roundtrip import _numerically_equal
+        assert _numerically_equal('000', '0') is True
+        assert _numerically_equal('020', '20') is True
+        # must NOT swallow the genuinely different Nottingham-style
+        # collision (different *values*, not just leading-zero padding)
+        assert _numerically_equal('60', '6') is False
+        # must NOT match a blank cell against a non-blank one
+        assert _numerically_equal('', '0') is False
+
+    def test_export_roundtrip_report_encodes_only_once(self, breast_raw_df, tmp_path, monkeypatch):
+        """Regression: export_roundtrip_report used to call TCREncoder.encode()
+        once for `.unencoded_columns`, then call compare_roundtrip() which
+        built a SECOND TCREncoder and ran the full encode pipeline again --
+        found during code review. Assert TCREncoder.encode is now invoked
+        exactly once per report."""
+        from tcr_decoder.roundtrip import export_roundtrip_report
+        from tcr_decoder.encoder import TCREncoder
+
+        call_count = 0
+        original_encode = TCREncoder.encode
+
+        def counting_encode(self, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return original_encode(self, *args, **kwargs)
+
+        monkeypatch.setattr(TCREncoder, 'encode', counting_encode)
+
+        src = tmp_path / 'breast.xlsx'
+        with pd.ExcelWriter(str(src), engine='openpyxl') as w:
+            breast_raw_df.to_excel(w, sheet_name='All_Fields_Decoded', index=False)
+        export_roundtrip_report(str(src), str(tmp_path / 'report.xlsx'))
+
+        assert call_count == 1
 
     def test_export_roundtrip_report_writes_expected_sheets(self, breast_raw_df, tmp_path):
         from tcr_decoder.roundtrip import export_roundtrip_report

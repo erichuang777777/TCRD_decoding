@@ -45,6 +45,22 @@ KNOWN_LABEL_COLLISION_NOTE = (
 )
 
 
+def _numerically_equal(o: str, g: str) -> bool:
+    """True if two raw-code strings represent the same integer value.
+
+    Leading-zero padding isn't clinically meaningful (e.g. STYPE95's '000'
+    and '0' both mean "No surgery"), so '000' vs '0' should count as a
+    match, not a reported mismatch. A plain `lstrip('0')` comparison gets
+    this wrong for all-zero codes specifically: '000'.lstrip('0') and
+    '0'.lstrip('0') both give '', so a naive `stripped != ''` guard (added
+    to avoid matching blank-vs-non-blank cells) also excludes this
+    legitimate case. Comparing as integers handles it correctly while still
+    requiring both sides to actually be digit strings (so blank cells or
+    genuinely different alphanumeric codes never match here).
+    """
+    return o.isdigit() and g.isdigit() and int(o) == int(g)
+
+
 def compare_roundtrip(
     source: Union[str, Path, TCRDecoder],
     cancer_group: Optional[str] = None,
@@ -76,6 +92,22 @@ def compare_roundtrip(
         compare) -- see `unencoded_columns` on the TCREncoder this
         function constructs internally if you need that list too.
     """
+    dec, _enc, reencoded = _decode_and_encode(source, cancer_group, sheet_name, on_error)
+    return _diff_mismatches(dec, reencoded)
+
+
+def _decode_and_encode(
+    source: Union[str, Path, TCRDecoder],
+    cancer_group: Optional[str],
+    sheet_name: str,
+    on_error: str,
+):
+    """Shared decode -> encode step for compare_roundtrip/export_roundtrip_report.
+
+    Factored out so a single call site (export_roundtrip_report) that needs
+    both the mismatch diff AND the TCREncoder's `unencoded_columns` doesn't
+    have to run the whole encode pipeline twice.
+    """
     if isinstance(source, TCRDecoder):
         dec = source
         if dec._clean_df is None:
@@ -87,7 +119,11 @@ def compare_roundtrip(
     clean = dec.clean
     enc = TCREncoder(clean, cancer_group=cancer_group or dec.cancer_group)
     reencoded = enc.encode(on_error=on_error)
+    return dec, enc, reencoded
 
+
+def _diff_mismatches(dec: TCRDecoder, reencoded: pd.DataFrame) -> pd.DataFrame:
+    clean = dec.clean
     patient_ids = (dec._raw_df['PK_raw'] if 'PK_raw' in dec._raw_df.columns
                    else pd.Series(range(len(clean)), index=clean.index))
 
@@ -101,7 +137,7 @@ def compare_roundtrip(
             o, g = orig.loc[idx], got.loc[idx]
             if g == '':
                 continue  # unencodable this cell -- nothing to compare
-            if o == g or (o.lstrip('0') == g.lstrip('0') and o.lstrip('0') != ''):
+            if o == g or _numerically_equal(o, g):
                 continue
             rows.append({
                 'Patient_ID': patient_ids.loc[idx],
@@ -126,19 +162,15 @@ def export_roundtrip_report(
         Field_Summary       -- mismatch count and rate per field
         Unencoded_Columns   -- clinical columns with no TCR code table, and why
     """
-    if isinstance(source, TCRDecoder):
-        dec = source
-        if dec._clean_df is None:
-            dec.decode()
-    else:
-        dec = TCRDecoder(source, sheet_name=sheet_name, cancer_group=cancer_group)
-        dec.load(skip_input_check=True).decode()
-
+    # Encode once and reuse the result for both the mismatch diff and
+    # `unencoded_columns` -- this used to call compare_roundtrip() (which
+    # runs its own TCREncoder.encode() internally) on top of an encode()
+    # already run just above, silently running the full SSF+structural
+    # encode pipeline twice per report.
+    dec, enc, reencoded = _decode_and_encode(
+        source, cancer_group, sheet_name, on_error='empty')
     clean = dec.clean
-    enc = TCREncoder(clean, cancer_group=cancer_group or dec.cancer_group)
-    enc.encode(on_error='empty')  # populates enc.unencoded_columns
-
-    mismatches = compare_roundtrip(dec, cancer_group=cancer_group, on_error='empty')
+    mismatches = _diff_mismatches(dec, reencoded)
 
     if len(mismatches):
         field_summary = (
