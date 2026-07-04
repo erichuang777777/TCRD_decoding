@@ -98,11 +98,31 @@ class TestEncodeErPr:
                               lambda s: encode_er_pr(s, 'ER'))
         assert enc.iloc[0] == str(code)
 
-    @pytest.mark.parametrize('code', ['W15', 'I50', 'S70', 'W1', 'S100'])
+    # Valid 3-char staining codes per the Cancer-SSF-Manual (breast SSF1,
+    # p.121): intensity letter + 2-digit proportion, 100% stored as '00'.
+    @pytest.mark.parametrize('code', ['W15', 'I50', 'S70', 'W01', 'S99', 'S00'])
     def test_roundtrip_staining_codes(self, code):
         dec, enc = _roundtrip([code], lambda s: decode_er_pr(s, 'ER'),
                               lambda s: encode_er_pr(s, 'ER'))
         assert enc.iloc[0] == code
+
+    def test_staining_00_means_100_percent(self):
+        """Manual (breast SSF1, p.121): staining proportion '00' == 100%.
+        decode must read S00/W00/I00 as 100% (not 0%, which would misread a
+        strongly-positive tumour as negative), and encode must round-trip
+        100% staining back to the canonical '00' code."""
+        for letter, intensity in [('S', 'Strong'), ('W', 'Weak'), ('I', 'Intermediate')]:
+            dec = decode_er_pr(pd.Series([f'{letter}00']), 'ER')
+            assert dec.iloc[0] == f'ER Positive ({intensity} staining, 100%)'
+            enc = encode_er_pr(dec, 'ER')
+            assert enc.iloc[0] == f'{letter}00'
+
+    def test_staining_single_digit_percent_zero_padded(self):
+        """5% weak staining round-trips to the canonical 'W05' (2-digit
+        proportion), matching the manual's 'W01' for 1%."""
+        enc = encode_er_pr(pd.Series(['ER Positive (Weak staining, 5%)']), 'ER')
+        assert enc.iloc[0] == 'W05'
+        assert decode_er_pr(pd.Series(['W05']), 'ER').iloc[0] == 'ER Positive (Weak staining, 5%)'
 
     def test_out_of_range_percent_passes_through(self):
         """decode_er_pr() itself falls back to bare passthrough for n>100;
@@ -238,10 +258,19 @@ class TestEncodeColorectumFields:
 
 
 class TestEncodeLiverFields:
-    @pytest.mark.parametrize('code', ['A05', 'A99', 0, 5, 10, 50, 987, 991, 992, 993, 988, 999])
+    @pytest.mark.parametrize('code', ['A00', 'A01', 'A05', 'A99', 0, 5, 10, 50, 987, 991, 992, 993, 988, 999])
     def test_afp_roundtrip(self, code):
         dec, enc = _roundtrip([code], _decode_liver_afp, encode_liver_afp)
         assert enc.iloc[0] == str(code)
+
+    def test_a00_means_under_1_not_zero(self):
+        """Per Cancer-SSF-Manual (liver SSF1, p.81): an actual AFP value of
+        0.91 ng/mL is coded A00 -- A00 means "<1 ng/mL", not literally zero/
+        undetectable. Same category of bug as the ER/PR S00-means-100% fix:
+        a floor/sentinel code misread as a literal value."""
+        dec = _decode_liver_afp(pd.Series(['A00']))
+        assert dec.iloc[0] == 'AFP <1 ng/mL (A-code, 2021+ scheme)'
+        assert encode_liver_afp(dec).iloc[0] == 'A00'
 
     @pytest.mark.parametrize('code', [1, 2, 500, 986, 987, 988, 999])
     def test_lab_value_10x_roundtrip(self, code):
@@ -259,10 +288,24 @@ class TestEncodeLiverFields:
 
 
 class TestEncodePSA:
-    @pytest.mark.parametrize('code', [0, 1, 45, 980, 988, 999])
+    @pytest.mark.parametrize('code', [
+        0, 1, 45, 500, 979, 980, 981, 982, 983, 984, 985, 986, 987,
+        989, 990, 991, 992, 993, 994, 995, 996, 997, 998, 988, 999,
+    ])
     def test_roundtrip(self, code):
+        """Covers the full PSA code table (Cancer-SSF-Manual, prostate SSF1,
+        p.177-178), including the high-value tiers (981-998, PSA >=98 ng/mL)
+        that the decoder originally didn't handle at all -- those values are
+        common in advanced/metastatic prostate cancer and were previously
+        falling through to a meaningless 'Code 991'-style fallback."""
         dec, enc = _roundtrip([code], _decode_psa, encode_psa)
         assert enc.iloc[0] == str(code)
+
+    def test_high_value_tiers_are_clinically_meaningful_not_raw_fallback(self):
+        for code in (981, 991, 998):
+            label = _decode_psa(pd.Series([str(code)])).iloc[0]
+            assert not label.startswith('Code '), (
+                f'PSA code {code} should decode to a clinical value, not fall through: {label!r}')
 
 
 class TestEncodeGenericSSF:

@@ -466,9 +466,15 @@ def _decode_liver_afp(series: pd.Series) -> pd.Series:
         if pd.isna(val) or str(val).strip() in ('', 'nan'):
             return ''
         s = str(val).strip().upper()
-        # Alphabetic A-codes (2021+ only): A00-A99 = 1-99 ng/mL
+        # Alphabetic A-codes (2021+ only): A01-A99 = actual integer 1-99 ng/mL;
+        # A00 specifically means "<1 ng/mL" (e.g. an actual value of 0.91
+        # ng/mL is coded A00), not literally zero/undetectable -- per
+        # Cancer-SSF-Manual (liver SSF1, p.81): "AFP檢驗結果實際數值為0.91
+        # ng/ml，請編碼A00".
         if len(s) == 3 and s[0] == 'A' and s[1:].isdigit():
             num = int(s[1:])
+            if num == 0:
+                return 'AFP <1 ng/mL (A-code, 2021+ scheme)'
             return f'AFP {num} ng/mL (A-code, 2021+ scheme)'
         try:
             iv = int(float(s))
@@ -639,8 +645,22 @@ def _decode_hbv_hcv(series: pd.Series, virus: str = 'HBV') -> pd.Series:
 # Prostate SSF decoders
 # ─────────────────────────────────────────────────────────────────────────────
 
+_PSA_TIER_MAP = {
+    981: (98.0, 199.9), 982: (200.0, 299.9), 983: (300.0, 399.9),
+    984: (400.0, 499.9), 985: (500.0, 599.9), 986: (600.0, 699.9),
+    987: (700.0, 799.9), 989: (800.0, 899.9), 990: (900.0, 999.9),
+}
+_PSA_THOUSANDS_MAP = {991: 1, 992: 2, 993: 3, 994: 4, 995: 5, 996: 6, 997: 7}
+
+
 def _decode_psa(series: pd.Series) -> pd.Series:
-    """PSA (prostate-specific antigen) in ng/mL."""
+    """PSA (prostate-specific antigen) in ng/mL.
+
+    Codebook: Cancer-SSF-Manual (prostate), SSF1, p.177-178.
+    001-979 = value x10 (0.2-97.9 ng/mL). 980 = 98.0 ng/mL (legacy code,
+    dx year 100-104 only). 981-990 = 100-wide tiers from 98.0-999.9 ng/mL.
+    991-997 = 1000-wide tiers from 1000-7999 ng/mL. 998 = >=8000 ng/mL.
+    """
     def _d(val):
         if pd.isna(val) or str(val).strip() in ('', 'nan'):
             return ''
@@ -652,10 +672,20 @@ def _decode_psa(series: pd.Series) -> pd.Series:
             return 'PSA <0.1 ng/mL (undetectable)'
         if iv == 988:
             return 'Not applicable'
+        if iv == 998:
+            return 'PSA >=8000 ng/mL'
         if iv == 999:
             return 'Unknown; not documented'
-        if 1 <= iv <= 980:
-            return f'PSA {iv/10:.1f} ng/mL'   # stored as ×10
+        if iv == 980:
+            return 'PSA 98.0 ng/mL (legacy code, dx year 100-104 only)'
+        if iv in _PSA_TIER_MAP:
+            lo, hi = _PSA_TIER_MAP[iv]
+            return f'PSA {lo:.1f}-{hi:.1f} ng/mL'
+        if iv in _PSA_THOUSANDS_MAP:
+            k = _PSA_THOUSANDS_MAP[iv]
+            return f'PSA {k * 1000}-{k * 1000 + 999} ng/mL'
+        if 1 <= iv <= 979:
+            return f'PSA {iv/10:.1f} ng/mL'
         return f'Code {iv}'
     return series.apply(_d)
 

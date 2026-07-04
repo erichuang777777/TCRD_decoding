@@ -129,7 +129,12 @@ def encode_er_pr(series: pd.Series, receptor: str) -> pd.Series:
             return special_rev[v]
         m = staining_re.match(v)
         if m:
-            return f'{intensity_code[m.group(1)]}{int(m.group(2))}'
+            # Field is intensity letter + 2-digit proportion; 100% is stored
+            # as '00' and single digits are zero-padded, per the
+            # Cancer-SSF-Manual (breast SSF1, p.121): weak 1% -> 'W01',
+            # strong 100% -> 'S00'.
+            pct = int(m.group(2))
+            return f'{intensity_code[m.group(1)]}{pct % 100:02d}'
         m = positive_re.match(v)
         if m:
             return m.group(1)
@@ -559,6 +564,8 @@ def encode_liver_afp(series: pd.Series) -> pd.Series:
             return '993'
         if v == 'Unknown / not tested before first treatment':
             return '999'
+        if v == 'AFP <1 ng/mL (A-code, 2021+ scheme)':
+            return 'A00'
         m = a_code_re.match(v)
         if m:
             return f'A{int(m.group(1)):02d}'
@@ -643,8 +650,13 @@ def encode_liver_inr(series: pd.Series) -> pd.Series:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def encode_psa(series: pd.Series) -> pd.Series:
-    """Inverse of _decode_psa()."""
+    """Inverse of _decode_psa(). Codebook: Cancer-SSF-Manual (prostate), p.177-178."""
+    from tcr_decoder.ssf_registry import _PSA_TIER_MAP, _PSA_THOUSANDS_MAP
+    tier_reverse = {f'{lo:.1f}-{hi:.1f}': code for code, (lo, hi) in _PSA_TIER_MAP.items()}
+    thousands_reverse = {k: code for code, k in _PSA_THOUSANDS_MAP.items()}
     value_re = re.compile(r'^PSA (\d+(?:\.\d+)?) ng/mL$')
+    tier_re = re.compile(r'^PSA (\d+\.\d)-(\d+\.\d) ng/mL$')
+    thousands_re = re.compile(r'^PSA (\d+)-(\d+) ng/mL$')
 
     def _encode(v):
         v = _clean(v)
@@ -654,12 +666,24 @@ def encode_psa(series: pd.Series) -> pd.Series:
             return '0'
         if v == 'Not applicable':
             return '988'
+        if v == 'PSA >=8000 ng/mL':
+            return '998'
         if v == 'Unknown; not documented':
             return '999'
+        if v == 'PSA 98.0 ng/mL (legacy code, dx year 100-104 only)':
+            return '980'
+        m = tier_re.match(v)
+        if m and f'{m.group(1)}-{m.group(2)}' in tier_reverse:
+            return str(tier_reverse[f'{m.group(1)}-{m.group(2)}'])
+        m = thousands_re.match(v)
+        if m:
+            k = int(m.group(1)) // 1000
+            if k in thousands_reverse:
+                return str(thousands_reverse[k])
         m = value_re.match(v)
         if m:
             code = round(float(m.group(1)) * 10)
-            if 1 <= code <= 980:
+            if 1 <= code <= 979:
                 return str(code)
         m = re.match(r'^Code (\d+)$', v)
         if m:

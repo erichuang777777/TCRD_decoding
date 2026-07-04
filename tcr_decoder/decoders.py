@@ -34,10 +34,17 @@ def decode_er_pr(raw_series: pd.Series, receptor: str) -> pd.Series:
         }
         if v in special:
             return special[v]
-        # Letter-prefix staining codes W/I/S
+        # Letter-prefix staining codes W/I/S. Per the Cancer-SSF-Manual
+        # (breast SSF1, p.121), the field is 3 chars: intensity letter +
+        # 2-digit proportion, and the proportion carries the staining % with
+        # 100% encoded as '00' (manual examples: strong 100% -> 'S00';
+        # weak 1% -> 'W01'). Treating '00' as a literal 0% would misread a
+        # strongly-positive tumour as negative, so map 0 -> 100.
         if len(v) >= 3 and v[0].upper() in 'WIS' and v[1:].isdigit():
             prefix = {'W': 'Weak', 'I': 'Intermediate', 'S': 'Strong'}[v[0].upper()]
             pct = int(v[1:])
+            if pct == 0:
+                pct = 100
             return f'{receptor} Positive ({prefix} staining, {pct}%)'
         # Numeric percentage
         if v.isdigit():
@@ -112,9 +119,9 @@ HER2_MAP = {
     '401': 'Other test — HER2 Positive (legacy: dx yr 100-107 only)',
     '402': 'Other test — HER2 Equivocal (legacy: dx yr 100-107 only)',
     # Legacy ISH-only codes (dx yr 100-107)
-    '300': 'ISH Negative',
-    '301': 'ISH Positive',
-    '302': 'ISH Equivocal',
+    '300': 'FISH Negative (legacy: dx yr 100-107 only)',
+    '301': 'FISH Positive (legacy: dx yr 100-107 only)',
+    '302': 'FISH Equivocal (legacy: dx yr 100-107 only)',
     # IHC+ISH combined (dx yr 108+)
     '500': 'IHC 0 + ISH Negative — Negative',
     '501': 'IHC 0 + ISH Positive — Positive',
