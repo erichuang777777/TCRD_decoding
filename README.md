@@ -107,6 +107,58 @@ print(result[["ER_Status", "HER2_Status"]])
 
 ---
 
+## Encoding (the reverse direction): clinical text → TCR raw codes
+
+`TCRDecoder` turns a registry export into clinical text. `TCREncoder` is its
+inverse: given a DataFrame shaped like `TCRDecoder(...).clean` (the
+`Clinical_Clean` sheet), it reconstructs the raw `SSF1_raw … SSF10_raw` codes
+plus a handful of structural fields (AJCC edition, surgery-type codes,
+regional-LN-surgery codes, EBRT technique, LN_POSITI).
+
+```python
+from tcr_decoder import TCRDecoder, TCREncoder
+
+dec = TCRDecoder("registry.xlsx").load().decode()
+
+enc = TCREncoder(dec.clean)
+raw = enc.encode()                 # DataFrame of {FIELD}_raw columns
+print(enc.cancer_group)            # auto-detected the same way TCRDecoder does
+print(enc.unencoded_columns)       # {column: reason} for anything it couldn't reconstruct
+```
+
+**Read this before assuming full coverage.** Most of `TCRDecoder`'s ~100
+output columns are decoded by trusting a `{FIELD}_decoded` column that is
+already present in the registry export (or, for a couple of fields, an
+external `cancer_registry_mapping.py` that is not part of this repo) — there
+is no code table in this package to invert for those, and `TCREncoder`
+deliberately reports them in `unencoded_columns` instead of guessing. What it
+*does* reconstruct with full fidelity is every SSF1-10 biomarker field across
+all 11 cancer profiles, since those have real decode logic (and now, real
+inverse logic) in this codebase.
+
+### Comparing two files / validating round-trip fidelity
+
+`compare_roundtrip` decodes a registry file, re-encodes it, and diffs the
+result against the original raw codes — this is the "convert both ways and
+compare" check:
+
+```python
+from tcr_decoder import compare_roundtrip, export_roundtrip_report
+
+mismatches = compare_roundtrip("registry.xlsx")   # DataFrame: Patient_ID, Field, Original_Code, Roundtrip_Code
+export_roundtrip_report("registry.xlsx", "roundtrip_report.xlsx")  # multi-sheet Excel report
+```
+
+A handful of TCR codes decode to *identical* text by design of the codebook
+itself (e.g. both `888` and `988` mean plain "Not applicable" for several SSF
+fields, and a Nottingham score entered as `"60"` vs `"6"` decodes the same
+way) — re-encoding such a label returns the canonical code, which may not be
+the exact original. These show up as low-volume, clinically-meaningless
+mismatches; the report's `Notes` sheet explains this so it isn't mistaken for
+a bug.
+
+---
+
 ## CLI
 
 ```bash
@@ -124,6 +176,10 @@ python -m tcr_decoder --ssf-info colorectum
 
 # Generate synthetic test data
 python -m tcr_decoder --synth breast --n 200 --seed 42 --out test.xlsx --decode
+
+# Round-trip check: decode a registry file, re-encode it, and report where
+# the raw codes do not come back exactly (see "Encoding" section above)
+python -m tcr_decoder registry.xlsx --roundtrip
 ```
 
 ---
@@ -186,8 +242,12 @@ tcr_decoder/
 ├── __init__.py          # Public API (v2.0.0)
 ├── __main__.py          # CLI entry point
 ├── core.py              # TCRDecoder class (pipeline orchestrator)
-├── ssf_registry.py      # Multi-cancer SSF routing (11 profiles)
+├── encoder.py           # TCREncoder class (inverse pipeline orchestrator)
+├── roundtrip.py         # compare_roundtrip / export_roundtrip_report
+├── codemap.py           # CodeMap: bidirectional code<->label source of truth
+├── ssf_registry.py      # Multi-cancer SSF routing (11 profiles), decode + encode
 ├── decoders.py          # Breast-specific SSF decoders
+├── encoders.py          # Inverse of decoders.py/ssf_registry.py's bespoke decoders
 ├── validators.py        # Clinical QA / consistency checks
 ├── derived.py           # Derived fields (staging, ratios)
 ├── synth.py             # Synthetic data generator
@@ -200,9 +260,10 @@ tests/
 ├── conftest.py          # Session-scoped fixtures (synthetic data)
 ├── test_ssf_registry.py # SSF routing, cancer group detection
 ├── test_decoders.py     # Individual decoder tests (boundary, edge cases)
+├── test_encoders.py     # Encode-direction + round-trip tests (all 11 profiles)
 ├── test_pipeline.py     # End-to-end pipeline tests
 ├── test_synth.py        # Synthetic generator tests
-└── test_adversarial.py  # Adversarial / stress tests (517 total)
+└── test_adversarial.py  # Adversarial / stress tests
 ```
 
 ---
