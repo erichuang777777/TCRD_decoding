@@ -51,6 +51,7 @@ Utility functions:
 """
 
 from tcr_decoder.core import TCRDecoder
+from tcr_decoder.encoder import TCREncoder
 from tcr_decoder.pipeline import TCRPipeline
 from tcr_decoder.scores.engine import ClinicalScoreEngine
 from tcr_decoder.ssf_registry import (
@@ -59,7 +60,9 @@ from tcr_decoder.ssf_registry import (
     detect_cancer_group_from_series,
     get_ssf_profile,
     apply_ssf_profile,
+    apply_ssf_encode_profile,
 )
+from tcr_decoder.roundtrip import compare_roundtrip, export_roundtrip_report
 
 __version__ = '2.0.0'
 
@@ -75,6 +78,7 @@ TCR_SSF_MANUAL_DATE    = '2025-12-04'   # effective date of SSF Manual
 
 __all__ = [
     'TCRDecoder',
+    'TCREncoder',
     'TCRPipeline',
     'ClinicalScoreEngine',
     'list_supported_cancers',
@@ -82,4 +86,7 @@ __all__ = [
     'detect_cancer_group_from_series',
     'get_ssf_profile',
     'apply_ssf_profile',
+    'apply_ssf_encode_profile',
+    'compare_roundtrip',
+    'export_roundtrip_report',
 ]

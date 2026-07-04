@@ -215,8 +215,12 @@ def add_er_pr_percent(df: pd.DataFrame) -> pd.DataFrame:
         col_str = df[col].fillna('').astype(str)
 
         # Decimal-aware extraction: captures '10', '10.5', '0.5', '100'.
+        # Forced to float64 (not just to_numeric's inferred dtype) because
+        # an all-integer-percent column infers as int64, and pandas >=2
+        # raises on assigning the float overrides below (0.5, 0.0) into
+        # an int64 column instead of silently upcasting it.
         pct = col_str.str.extract(r'([0-9]+(?:\.[0-9]+)?)\s*%', expand=False)
-        df[f'{receptor}_Percent'] = pd.to_numeric(pct, errors='coerce')
+        df[f'{receptor}_Percent'] = pd.to_numeric(pct, errors='coerce').astype('float64')
 
         # Convention overrides
         lt1 = col_str.str.contains('<1%', na=False)

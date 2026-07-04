@@ -199,15 +199,9 @@ def _map_decode(
 
     Eliminates the repeated _d() closure pattern across SSF decoder functions.
     Handles NaN, float-coded integers, and unknown codes uniformly.
+
+    Implemented on top of ``CodeMap`` so this stays a single source of truth
+    with the reverse (encode) direction -- see tcr_decoder.codemap.
     """
-    def _decoder(series: pd.Series) -> pd.Series:
-        def _d(val) -> str:
-            if pd.isna(val) or str(val).strip() in ('', 'nan'):
-                return ''
-            try:
-                iv = int(float(str(val).strip()))
-            except (ValueError, TypeError):
-                return str(val).strip()
-            return code_map.get(iv, f'{fallback} {iv}')
-        return series.apply(_d)
-    return _decoder
+    from tcr_decoder.codemap import CodeMap
+    return CodeMap(code_map, fallback=fallback).decode

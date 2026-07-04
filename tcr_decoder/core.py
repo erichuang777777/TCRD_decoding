@@ -66,6 +66,114 @@ from tcr_decoder.report import generate_summary_report, _format_summary_sheet
 logger = logging.getLogger('tcr_decoder')
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Structural code tables (module-level so TCREncoder can invert them too --
+# see tcr_decoder.encoder). Decode behavior is unchanged: these are the exact
+# same dict literals that used to live inline inside TCRDecoder.decode().
+# ─────────────────────────────────────────────────────────────────────────────
+
+AJCC_MAP = {
+    # Single-digit (standard format)
+    '6':     'AJCC 6th Edition (2002)',
+    '7':     'AJCC 7th Edition (2010)',
+    '8':     'AJCC 8th Edition (2018)',
+    '8048':  'AJCC 8th Edition — Prognostic Stage (Breast)',
+    '99':    'Unknown AJCC edition',
+    '99999': 'Not applicable',
+    # Zero-padded (TCR export may use '06', '07', '08')
+    '06':    'AJCC 6th Edition (2002)',
+    '07':    'AJCC 7th Edition (2010)',
+    '08':    'AJCC 8th Edition (2018)',
+}
+
+PRESTYPE_MAP = {
+    '0':   'No outside hospital surgery',
+    '20':  'Partial mastectomy / lumpectomy',
+    '22':  'Modified radical mastectomy',
+    '24':  'Total / simple mastectomy',
+    '41':  'Local excision — margins positive or NOS',
+    '51':  'Biopsy only',
+    '99':  'Unknown',
+}
+
+STYPE95_MAP = {
+    # 2025 TCR 3-digit codes (official codebook Appendix B, breast C50)
+    '0':   'No surgery',
+    '000': 'No surgery',
+    '200': 'Partial mastectomy (lumpectomy / segmental / quadrantectomy)',
+    '210': 'Diagnostic excision — no pre-op biopsy proven diagnosis',
+    '215': 'Excisional biopsy for atypia',
+    '240': 'Re-excision of margins (partial mastectomy)',
+    '290': 'Central lumpectomy — nipple areolar complex removed',
+    '300': 'Skin-sparing mastectomy',
+    '310': 'Skin-sparing mastectomy WITHOUT contralateral removal',
+    '311': 'Skin-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
+    '312': 'Skin-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
+    '313': 'Skin-sparing mastectomy WITHOUT contralateral, implant reconstruction',
+    '314': 'Skin-sparing mastectomy WITHOUT contralateral, combined reconstruction',
+    '320': 'Skin-sparing mastectomy WITH contralateral removal',
+    '321': 'Skin-sparing mastectomy WITH contralateral, reconstruction NOS',
+    '322': 'Skin-sparing mastectomy WITH contralateral, tissue reconstruction',
+    '323': 'Skin-sparing mastectomy WITH contralateral, implant reconstruction',
+    '324': 'Skin-sparing mastectomy WITH contralateral, combined reconstruction',
+    '400': 'Nipple-sparing mastectomy',
+    '410': 'Nipple-sparing mastectomy WITHOUT contralateral removal',
+    '411': 'Nipple-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
+    '412': 'Nipple-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
+    '413': 'Nipple-sparing mastectomy WITHOUT contralateral, implant reconstruction',
+    '414': 'Nipple-sparing mastectomy WITHOUT contralateral, combined reconstruction',
+    '420': 'Nipple-sparing mastectomy WITH contralateral removal',
+    '421': 'Nipple-sparing mastectomy WITH contralateral, reconstruction NOS',
+    '422': 'Nipple-sparing mastectomy WITH contralateral, tissue reconstruction',
+    '423': 'Nipple-sparing mastectomy WITH contralateral, implant reconstruction',
+    '424': 'Nipple-sparing mastectomy WITH contralateral, combined reconstruction',
+    '500': 'Areolar-sparing mastectomy',
+    '510': 'Areolar-sparing mastectomy WITHOUT contralateral removal',
+    '520': 'Areolar-sparing mastectomy WITH contralateral removal',
+    '600': 'Total (simple) mastectomy',
+    '610': 'Total mastectomy WITHOUT contralateral removal',
+    '620': 'Total mastectomy WITH contralateral removal',
+    '700': 'Radical mastectomy, NOS',
+    '710': 'Radical mastectomy WITHOUT contralateral removal',
+    '720': 'Radical mastectomy WITH contralateral removal',
+    '760': 'Bilateral mastectomy (single tumor involving both breasts)',
+    '800': 'Mastectomy NOS (including extended radical mastectomy)',
+    '900': 'Surgery, NOS',
+    '990': 'Unknown if surgery performed',
+    # Legacy 2-digit codes (pre-2025 TCR format, for backward compatibility)
+    '20':  'Partial mastectomy / lumpectomy (local excision)',
+    '22':  'Modified radical mastectomy',
+    '24':  'Total / simple mastectomy',
+    '41':  'Local excision — margins positive or NOS',
+    '44':  'Sentinel LN biopsy only',
+    '45':  'Sentinel LN biopsy + axillary LN dissection',
+    '50':  'Radical mastectomy (legacy code)',
+    '51':  'Extended radical mastectomy (legacy code)',
+    '54':  'Subcutaneous mastectomy (legacy code)',
+    '55':  'Skin-sparing mastectomy (legacy code)',
+    '60':  'Other surgery',
+    '99':  'Unknown',
+    # Generic 3-digit codes for non-breast sites (rounded to hundreds)
+    '30':  'Partial surgical removal of primary site (legacy code)',
+    '40':  'Total surgical removal of primary site (legacy code)',
+    '70':  'Radical surgery with organ resection in continuity (legacy code)',
+    '80':  'Surgery, NOS (legacy code)',
+    '00':  'No surgery',
+}
+
+LNSCO_MAP = {
+    '0': 'No regional LN procedure performed',
+    '1': 'Diagnostic biopsy or aspiration of regional LN only (incisional/excisional/core biopsy or aspiration)',
+    '2': 'Sentinel LN biopsy (SLNB) only',
+    '3': 'Regional LN dissection — number/extent not specified',
+    '4': '1–3 regional LN removed (therapeutic dissection, NOT SLNB)',
+    '5': '4 or more regional LN removed (therapeutic dissection, NOT SLNB)',
+    '6': 'SLNB + regional LN dissection (same surgery or timing unrecorded)',
+    '7': 'SLNB first, then regional LN dissection (separate surgeries)',
+    '9': 'Unknown',
+}
+
+
 class TCRDecoder:
     """Main pipeline: load → decode → validate → export.
 
@@ -296,20 +404,7 @@ class TCRDecoder:
             _ln_pos_decoded.where(_ln_pos_decoded.str.isdigit()), errors='coerce').astype('Int64')
 
         # ── Staging ───────────────────────────────────────
-        _AJCC_MAP = {
-            # Single-digit (standard format)
-            '6':     'AJCC 6th Edition (2002)',
-            '7':     'AJCC 7th Edition (2010)',
-            '8':     'AJCC 8th Edition (2018)',
-            '8048':  'AJCC 8th Edition — Prognostic Stage (Breast)',
-            '99':    'Unknown AJCC edition',
-            '99999': 'Not applicable',
-            # Zero-padded (TCR export may use '06', '07', '08')
-            '06':    'AJCC 6th Edition (2002)',
-            '07':    'AJCC 7th Edition (2010)',
-            '08':    'AJCC 8th Edition (2018)',
-        }
-        out['AJCC_Edition'] = self._map('AJCC', _AJCC_MAP)
+        out['AJCC_Edition'] = self._map('AJCC', AJCC_MAP)
 
         def fix_m0i(series):
             return series.str.replace(
@@ -377,81 +472,8 @@ class TCRDecoder:
         # ── Surgery ───────────────────────────────────────
         out['Surgery_Performed'] = en(self._dec('S'))
         out['Surgery_Date']      = clean_date(self._raw('FSDATE'))
-        _PRESTYPE_MAP = {
-            '0':   'No outside hospital surgery',
-            '20':  'Partial mastectomy / lumpectomy',
-            '22':  'Modified radical mastectomy',
-            '24':  'Total / simple mastectomy',
-            '41':  'Local excision — margins positive or NOS',
-            '51':  'Biopsy only',
-            '99':  'Unknown',
-        }
-        out['Surgery_Type_Other_Hosp'] = self._map('PRESTYPE', _PRESTYPE_MAP)
-        _STYPE95_MAP = {
-            # 2025 TCR 3-digit codes (official codebook Appendix B, breast C50)
-            '0':   'No surgery',
-            '000': 'No surgery',
-            '200': 'Partial mastectomy (lumpectomy / segmental / quadrantectomy)',
-            '210': 'Diagnostic excision — no pre-op biopsy proven diagnosis',
-            '215': 'Excisional biopsy for atypia',
-            '240': 'Re-excision of margins (partial mastectomy)',
-            '290': 'Central lumpectomy — nipple areolar complex removed',
-            '300': 'Skin-sparing mastectomy',
-            '310': 'Skin-sparing mastectomy WITHOUT contralateral removal',
-            '311': 'Skin-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
-            '312': 'Skin-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
-            '313': 'Skin-sparing mastectomy WITHOUT contralateral, implant reconstruction',
-            '314': 'Skin-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-            '320': 'Skin-sparing mastectomy WITH contralateral removal',
-            '321': 'Skin-sparing mastectomy WITH contralateral, reconstruction NOS',
-            '322': 'Skin-sparing mastectomy WITH contralateral, tissue reconstruction',
-            '323': 'Skin-sparing mastectomy WITH contralateral, implant reconstruction',
-            '324': 'Skin-sparing mastectomy WITH contralateral, combined reconstruction',
-            '400': 'Nipple-sparing mastectomy',
-            '410': 'Nipple-sparing mastectomy WITHOUT contralateral removal',
-            '411': 'Nipple-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
-            '412': 'Nipple-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
-            '413': 'Nipple-sparing mastectomy WITHOUT contralateral, implant reconstruction',
-            '414': 'Nipple-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-            '420': 'Nipple-sparing mastectomy WITH contralateral removal',
-            '421': 'Nipple-sparing mastectomy WITH contralateral, reconstruction NOS',
-            '422': 'Nipple-sparing mastectomy WITH contralateral, tissue reconstruction',
-            '423': 'Nipple-sparing mastectomy WITH contralateral, implant reconstruction',
-            '424': 'Nipple-sparing mastectomy WITH contralateral, combined reconstruction',
-            '500': 'Areolar-sparing mastectomy',
-            '510': 'Areolar-sparing mastectomy WITHOUT contralateral removal',
-            '520': 'Areolar-sparing mastectomy WITH contralateral removal',
-            '600': 'Total (simple) mastectomy',
-            '610': 'Total mastectomy WITHOUT contralateral removal',
-            '620': 'Total mastectomy WITH contralateral removal',
-            '700': 'Radical mastectomy, NOS',
-            '710': 'Radical mastectomy WITHOUT contralateral removal',
-            '720': 'Radical mastectomy WITH contralateral removal',
-            '760': 'Bilateral mastectomy (single tumor involving both breasts)',
-            '800': 'Mastectomy NOS (including extended radical mastectomy)',
-            '900': 'Surgery, NOS',
-            '990': 'Unknown if surgery performed',
-            # Legacy 2-digit codes (pre-2025 TCR format, for backward compatibility)
-            '20':  'Partial mastectomy / lumpectomy (local excision)',
-            '22':  'Modified radical mastectomy',
-            '24':  'Total / simple mastectomy',
-            '41':  'Local excision — margins positive or NOS',
-            '44':  'Sentinel LN biopsy only',
-            '45':  'Sentinel LN biopsy + axillary LN dissection',
-            '50':  'Radical mastectomy (legacy code)',
-            '51':  'Extended radical mastectomy (legacy code)',
-            '54':  'Subcutaneous mastectomy (legacy code)',
-            '55':  'Skin-sparing mastectomy (legacy code)',
-            '60':  'Other surgery',
-            '99':  'Unknown',
-            # Generic 3-digit codes for non-breast sites (rounded to hundreds)
-            '30':  'Partial surgical removal of primary site (legacy code)',
-            '40':  'Total surgical removal of primary site (legacy code)',
-            '70':  'Radical surgery with organ resection in continuity (legacy code)',
-            '80':  'Surgery, NOS (legacy code)',
-            '00':  'No surgery',
-        }
-        out['Surgery_Type_This_Hosp'] = self._map('STYPE95', _STYPE95_MAP)
+        out['Surgery_Type_Other_Hosp'] = self._map('PRESTYPE', PRESTYPE_MAP)
+        out['Surgery_Type_This_Hosp'] = self._map('STYPE95', STYPE95_MAP)
         _surg_this = ~out['Surgery_Type_This_Hosp'].str.contains(
             'No surgery|Unknown', na=True, case=False)
         _surg_other = ~out['Surgery_Type_Other_Hosp'].str.contains(
@@ -461,19 +483,8 @@ class TCRDecoder:
         out['Surgical_Margin']     = en(self._dec('MARG95'))
         out['Surgical_Margin_mm']  = clean_numeric(
             self._raw('MARGDIS'), unknown_vals={'990', '999', '988', '9999'})
-        _LNSCO_MAP = {
-            '0': 'No regional LN procedure performed',
-            '1': 'Diagnostic biopsy or aspiration of regional LN only (incisional/excisional/core biopsy or aspiration)',
-            '2': 'Sentinel LN biopsy (SLNB) only',
-            '3': 'Regional LN dissection — number/extent not specified',
-            '4': '1–3 regional LN removed (therapeutic dissection, NOT SLNB)',
-            '5': '4 or more regional LN removed (therapeutic dissection, NOT SLNB)',
-            '6': 'SLNB + regional LN dissection (same surgery or timing unrecorded)',
-            '7': 'SLNB first, then regional LN dissection (separate surgeries)',
-            '9': 'Unknown',
-        }
-        out['Regional_LN_Surgery_Other'] = self._map('PRESLNSCO', _LNSCO_MAP)
-        out['Regional_LN_Surgery_This']  = self._map('SLNSCO95', _LNSCO_MAP)
+        out['Regional_LN_Surgery_Other'] = self._map('PRESLNSCO', LNSCO_MAP)
+        out['Regional_LN_Surgery_This']  = self._map('SLNSCO95', LNSCO_MAP)
         # Note: Sentinel LN (SSF4/SSF5) is decoded in the SSF section below,
         # using the cancer-specific profile (breast→Sentinel_LN_Examined/Positive;
         # other cancers→ cancer-specific column names).
@@ -572,6 +583,15 @@ class TCRDecoder:
         # ── Misc ──────────────────────────────────────────
         out['Height_cm']           = clean_numeric(self._raw('HEIGHT'), unknown_vals={'999', '9999'})
         out['Weight_kg']           = clean_numeric(self._raw('WEIGHT'), unknown_vals={'999', '9999'})
+        # KNOWN ISSUE (found while building the encode direction -- see
+        # tcr_decoder/encoder.py's _SSF_PIPELINE_OVERRIDDEN): this silently
+        # clobbers the lung SSF3 (ECOG/KPS) decoder's output from the
+        # Biomarkers section above, since both write to the SAME column
+        # name 'Performance_Status'. For lung patients the SSF3-specific
+        # interpretation is discarded in favor of this generic KPSECOG
+        # value. Needs a deliberate fix (e.g. give the lung SSF3 field its
+        # own column name) plus updating the tests/docs that currently
+        # expect 'Performance_Status' to mean KPSECOG.
         out['Performance_Status']  = en(self._dec('KPSECOG'))
         out['Class_of_Case']       = en(self._dec('CLASS95'))
         out['Diag_at_Hosp']        = en(self._dec('CLASSOFDIAG'))

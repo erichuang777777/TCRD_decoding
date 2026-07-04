@@ -92,67 +92,68 @@ def decode_ki67(raw_series: pd.Series) -> pd.Series:
 
 # ─── HER2 (SSF7) ────────────────────────────────────────────────────
 
+HER2_MAP = {
+    '0':   'IHC 0 — Negative',
+    '1':   'IHC 1+ — Negative (Low HER2)',
+    '2':   'IHC 2+ — Equivocal',
+    '3':   'IHC 3+ — Positive',
+    '000': 'IHC 0 — Negative',
+    '004': 'IHC 0 Ultralow (0%<staining≤10%) — Negative',
+    '100': 'IHC 0 → Negative (no ISH)',
+    '101': 'IHC 1+ — Negative (Low HER2)',
+    '102': 'IHC 2+ — Equivocal (no ISH)',
+    '103': 'IHC 3+ — Positive',
+    # Legacy CISH codes (dx yr 100-107 only)
+    '200': 'CISH Negative (legacy: dx yr 100-107 only)',
+    '201': 'CISH Positive (legacy: dx yr 100-107 only)',
+    '202': 'CISH Equivocal (legacy: dx yr 100-107 only)',
+    # Legacy other-test codes (dx yr 100-107 only)
+    '400': 'Other test — HER2 Negative (legacy: dx yr 100-107 only)',
+    '401': 'Other test — HER2 Positive (legacy: dx yr 100-107 only)',
+    '402': 'Other test — HER2 Equivocal (legacy: dx yr 100-107 only)',
+    # Legacy ISH-only codes (dx yr 100-107)
+    '300': 'ISH Negative',
+    '301': 'ISH Positive',
+    '302': 'ISH Equivocal',
+    # IHC+ISH combined (dx yr 108+)
+    '500': 'IHC 0 + ISH Negative — Negative',
+    '501': 'IHC 0 + ISH Positive — Positive',
+    '502': 'IHC 0 + ISH Equivocal',
+    '510': 'IHC 1+ + ISH Negative — Negative',
+    '511': 'IHC 1+ + ISH Positive — Positive',
+    '512': 'IHC 1+ + ISH Equivocal',
+    '520': 'IHC 2+ + ISH Negative — Negative',
+    '521': 'IHC 2+ + ISH Positive — Positive',
+    '522': 'IHC 2+ + ISH Equivocal',
+    '530': 'IHC 3+ + ISH Negative — Positive (IHC overrides)',
+    '531': 'IHC 3+ + ISH Positive — Positive',
+    '532': 'IHC 3+ + ISH Equivocal — Positive (IHC overrides)',
+    '590': 'IHC unknown + ISH Negative — Negative',
+    '591': 'IHC unknown + ISH Positive — Positive',
+    '592': 'IHC unknown + ISH Equivocal',
+    # Ultralow HER2 + ISH (dx yr 114+)
+    '600': 'IHC 0 (staining=0%) + ISH Negative — Negative',
+    '601': 'IHC 0 (staining=0%) + ISH Positive — Positive',
+    '602': 'IHC 0 (staining=0%) + ISH Equivocal',
+    '640': 'IHC 0 Ultralow + ISH Negative — Negative',
+    '641': 'IHC 0 Ultralow + ISH Positive — Positive',
+    '642': 'IHC 0 Ultralow + ISH Equivocal',
+    # Neoadjuvant / Other
+    '888': 'HER2 converted Neg→Pos after neoadjuvant therapy',
+    '900': 'HER2 Negative (other/unknown test method)',
+    '901': 'HER2 Positive (other/unknown test method)',
+    '902': 'HER2 Equivocal (other/unknown test method)',
+    '988': 'Not applicable (Phyllodes/Sarcoma)',
+    '999': 'Unknown',
+}
+
+
 def decode_her2(raw_series: pd.Series) -> pd.Series:
     """Decode SSF7 HER2 combined IHC+ISH codes.
 
     Codebook: Cancer-SSF-Manual (breast), p.138-145
     Complex 3-digit system: 1st digit=test type, 2nd=IHC, 3rd=ISH
     """
-    HER2_MAP = {
-        '0':   'IHC 0 — Negative',
-        '1':   'IHC 1+ — Negative (Low HER2)',
-        '2':   'IHC 2+ — Equivocal',
-        '3':   'IHC 3+ — Positive',
-        '000': 'IHC 0 — Negative',
-        '004': 'IHC 0 Ultralow (0%<staining≤10%) — Negative',
-        '100': 'IHC 0 → Negative (no ISH)',
-        '101': 'IHC 1+ — Negative (Low HER2)',
-        '102': 'IHC 2+ — Equivocal (no ISH)',
-        '103': 'IHC 3+ — Positive',
-        # Legacy CISH codes (dx yr 100-107 only)
-        '200': 'CISH Negative (legacy: dx yr 100-107 only)',
-        '201': 'CISH Positive (legacy: dx yr 100-107 only)',
-        '202': 'CISH Equivocal (legacy: dx yr 100-107 only)',
-        # Legacy other-test codes (dx yr 100-107 only)
-        '400': 'Other test — HER2 Negative (legacy: dx yr 100-107 only)',
-        '401': 'Other test — HER2 Positive (legacy: dx yr 100-107 only)',
-        '402': 'Other test — HER2 Equivocal (legacy: dx yr 100-107 only)',
-        # Legacy ISH-only codes (dx yr 100-107)
-        '300': 'ISH Negative',
-        '301': 'ISH Positive',
-        '302': 'ISH Equivocal',
-        # IHC+ISH combined (dx yr 108+)
-        '500': 'IHC 0 + ISH Negative — Negative',
-        '501': 'IHC 0 + ISH Positive — Positive',
-        '502': 'IHC 0 + ISH Equivocal',
-        '510': 'IHC 1+ + ISH Negative — Negative',
-        '511': 'IHC 1+ + ISH Positive — Positive',
-        '512': 'IHC 1+ + ISH Equivocal',
-        '520': 'IHC 2+ + ISH Negative — Negative',
-        '521': 'IHC 2+ + ISH Positive — Positive',
-        '522': 'IHC 2+ + ISH Equivocal',
-        '530': 'IHC 3+ + ISH Negative — Positive (IHC overrides)',
-        '531': 'IHC 3+ + ISH Positive — Positive',
-        '532': 'IHC 3+ + ISH Equivocal — Positive (IHC overrides)',
-        '590': 'IHC unknown + ISH Negative — Negative',
-        '591': 'IHC unknown + ISH Positive — Positive',
-        '592': 'IHC unknown + ISH Equivocal',
-        # Ultralow HER2 + ISH (dx yr 114+)
-        '600': 'IHC 0 (staining=0%) + ISH Negative — Negative',
-        '601': 'IHC 0 (staining=0%) + ISH Positive — Positive',
-        '602': 'IHC 0 (staining=0%) + ISH Equivocal',
-        '640': 'IHC 0 Ultralow + ISH Negative — Negative',
-        '641': 'IHC 0 Ultralow + ISH Positive — Positive',
-        '642': 'IHC 0 Ultralow + ISH Equivocal',
-        # Neoadjuvant / Other
-        '888': 'HER2 converted Neg→Pos after neoadjuvant therapy',
-        '900': 'HER2 Negative (other/unknown test method)',
-        '901': 'HER2 Positive (other/unknown test method)',
-        '902': 'HER2 Equivocal (other/unknown test method)',
-        '988': 'Not applicable (Phyllodes/Sarcoma)',
-        '999': 'Unknown',
-    }
-
     def _decode(v):
         v = _norm(v)
         if not v:
@@ -208,44 +209,51 @@ def decode_nottingham(raw_series: pd.Series) -> pd.Series:
 
 # ─── Neoadjuvant Response (SSF3) ────────────────────────────────────
 
+SSF3_NEOADJ_MAP = {
+    '10':  'cCR — Clinical complete response',
+    '010': 'cCR — Clinical complete response',
+    '11':  'pCR — Pathologic complete response (no residual in breast + nodes)',
+    '011': 'pCR — Pathologic complete response (no residual in breast + nodes)',
+    '20':  'Partial response / Moderate response',
+    '020': 'Partial response / Moderate response',
+    '30':  'Stable disease / Minimal response',
+    '030': 'Stable disease / Minimal response',
+    '40':  'Progressive disease / No response',
+    '040': 'Progressive disease / No response',
+    '888': 'Not applicable (conversion / neoadjuvant outcome not assessed)',
+    '988': 'Not applicable (no neoadjuvant therapy)',
+    '990': 'Post-treatment shrinkage, degree not specified',
+    '999': 'Unknown',
+}
+
+
 def decode_ssf3_neoadj(raw_series: pd.Series) -> pd.Series:
     """Decode SSF3 neoadjuvant therapy response codes.
 
     Codebook: Cancer-SSF-Manual (breast), p.135-136
     Codes: 010 (cCR), 011 (pCR), 020 (PR), 030 (SD), 040 (PD), 988/990/999
     """
-    MAP = {
-        '10':  'cCR — Clinical complete response',
-        '010': 'cCR — Clinical complete response',
-        '11':  'pCR — Pathologic complete response (no residual in breast + nodes)',
-        '011': 'pCR — Pathologic complete response (no residual in breast + nodes)',
-        '20':  'Partial response / Moderate response',
-        '020': 'Partial response / Moderate response',
-        '30':  'Stable disease / Minimal response',
-        '030': 'Stable disease / Minimal response',
-        '40':  'Progressive disease / No response',
-        '040': 'Progressive disease / No response',
-        '888': 'Not applicable (conversion / neoadjuvant outcome not assessed)',
-        '988': 'Not applicable (no neoadjuvant therapy)',
-        '990': 'Post-treatment shrinkage, degree not specified',
-        '999': 'Unknown',
-    }
-
     def _decode(v):
         v = _norm(v)
         if not v:
             return ''
-        if v in MAP:
-            return MAP[v]
+        if v in SSF3_NEOADJ_MAP:
+            return SSF3_NEOADJ_MAP[v]
         v2 = v.zfill(3)
-        if v2 in MAP:
-            return MAP[v2]
+        if v2 in SSF3_NEOADJ_MAP:
+            return SSF3_NEOADJ_MAP[v2]
         return v
 
     return raw_series.fillna('').astype(str).apply(_decode)
 
 
 # ─── EBRT Technique (additive coding) ───────────────────────────────
+
+EBRT_COMPONENTS = {
+    1: '2D/Simple', 2: '3D-CRT', 4: 'IMRT', 8: 'VMAT/Tomotherapy',
+    16: 'Mixed Photon+Particle', 32: 'IGRT', 64: 'Respiratory Control',
+}
+
 
 def decode_ebrt_additive(raw_series: pd.Series) -> pd.Series:
     """Decode EBRT technique using additive coding system.
@@ -254,10 +262,7 @@ def decode_ebrt_additive(raw_series: pd.Series) -> pd.Series:
     Base codes: 1=2D, 2=3D-CRT, 4=IMRT, 8=VMAT/Tomo, 16=Mixed, 32=IGRT, 64=Resp
     Final code = sum of all techniques used across treatment phases.
     """
-    COMPONENTS = {
-        1: '2D/Simple', 2: '3D-CRT', 4: 'IMRT', 8: 'VMAT/Tomotherapy',
-        16: 'Mixed Photon+Particle', 32: 'IGRT', 64: 'Respiratory Control',
-    }
+    COMPONENTS = EBRT_COMPONENTS
 
     def _decode(v):
         v = _norm(v)
