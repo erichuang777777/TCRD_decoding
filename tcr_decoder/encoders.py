@@ -134,7 +134,16 @@ def encode_er_pr(series: pd.Series, receptor: str) -> pd.Series:
             # Cancer-SSF-Manual (breast SSF1, p.121): weak 1% -> 'W01',
             # strong 100% -> 'S00'.
             pct = int(m.group(2))
-            return f'{intensity_code[m.group(1)]}{pct % 100:02d}'
+            if 0 <= pct <= 100:
+                return f'{intensity_code[m.group(1)]}{pct % 100:02d}'
+            # decode_er_pr()'s staining regex has no upper bound on the
+            # digit run, so it leniently decodes an already out-of-spec raw
+            # code (e.g. a corrupted 'S150') instead of rejecting it. Mirror
+            # that leniency here too: `pct % 100` would silently WRAP an
+            # out-of-range value into a different, wrong 2-digit code
+            # (150 -> 'S50') instead of preserving it -- return the value
+            # unmodified so the round trip doesn't fabricate a new number.
+            return f'{intensity_code[m.group(1)]}{pct}'
         m = positive_re.match(v)
         if m:
             return m.group(1)
