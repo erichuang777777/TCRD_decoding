@@ -79,7 +79,7 @@ class TestBreastPipelineColumns:
 class TestLungPipelineColumns:
 
     REQUIRED_LUNG_SSF = [
-        'Separate_Tumor_Nodules', 'Visceral_Pleural_Invasion', 'Performance_Status',
+        'Separate_Tumor_Nodules', 'Visceral_Pleural_Invasion', 'Performance_Status_SSF3',
         'Malignant_Pleural_Effusion', 'Mediastinal_LN_Sampling',
         'EGFR_Mutation', 'ALK_Translocation', 'Adenocarcinoma_Component',
     ]

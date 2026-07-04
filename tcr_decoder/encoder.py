@@ -89,16 +89,6 @@ _SSF_PIPELINE_OVERRIDDEN = {
         "from the input file's own SSF9_decoded column, not the SSF profile's "
         "decoder -- there is no fixed code table to invert here."
     ),
-    ('lung', 'Performance_Status'): (
-        "Column-name collision in TCRDecoder.decode(): the lung SSF3 "
-        "(ECOG/KPS) decoder's output and the separate, generic KPSECOG "
-        "field both write to 'Performance_Status', and the KPSECOG value "
-        "(en(self._dec('KPSECOG')), set later in the Misc section) silently "
-        "wins. This is a known pre-existing decode-side bug -- see the "
-        "Fable audit note in ssf_registry.py -- not a limitation of the "
-        "encoder; there is no reliable way to recover the SSF3 value from "
-        "this column's actual content."
-    ),
 }
 
 

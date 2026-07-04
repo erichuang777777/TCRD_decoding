@@ -316,7 +316,7 @@ class TestApplySSFProfile:
         """SSF3=0: ECOG 0, fully active."""
         df = self._make_df({'SSF3_raw': [0]})
         result = apply_ssf_profile(df, 'lung')
-        assert 'ECOG 0' in result['Performance_Status'].iloc[0]
+        assert 'ECOG 0' in result['Performance_Status_SSF3'].iloc[0]
 
     def test_lung_ssf8_micropapillary(self):
         """SSF8=1: micropapillary component only."""

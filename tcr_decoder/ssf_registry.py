@@ -966,7 +966,7 @@ def _build_profiles() -> Dict[str, SSFProfile]:
             'SSF2':  SSFFieldDef('SSF2', 'Visceral_Pleural_Invasion',
                                  'Visceral pleural invasion (PL0-PL3)',
                                  decoder=_decode_lung_ssf2_vpi),
-            'SSF3':  SSFFieldDef('SSF3', 'Performance_Status',
+            'SSF3':  SSFFieldDef('SSF3', 'Performance_Status_SSF3',
                                  'Performance status (ECOG/KPS) before treatment',
                                  decoder=_decode_lung_ssf3_ecog),
             'SSF4':  SSFFieldDef('SSF4', 'Malignant_Pleural_Effusion',

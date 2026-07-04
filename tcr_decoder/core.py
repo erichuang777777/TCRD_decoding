@@ -583,15 +583,6 @@ class TCRDecoder:
         # ── Misc ──────────────────────────────────────────
         out['Height_cm']           = clean_numeric(self._raw('HEIGHT'), unknown_vals={'999', '9999'})
         out['Weight_kg']           = clean_numeric(self._raw('WEIGHT'), unknown_vals={'999', '9999'})
-        # KNOWN ISSUE (found while building the encode direction -- see
-        # tcr_decoder/encoder.py's _SSF_PIPELINE_OVERRIDDEN): this silently
-        # clobbers the lung SSF3 (ECOG/KPS) decoder's output from the
-        # Biomarkers section above, since both write to the SAME column
-        # name 'Performance_Status'. For lung patients the SSF3-specific
-        # interpretation is discarded in favor of this generic KPSECOG
-        # value. Needs a deliberate fix (e.g. give the lung SSF3 field its
-        # own column name) plus updating the tests/docs that currently
-        # expect 'Performance_Status' to mean KPSECOG.
         out['Performance_Status']  = en(self._dec('KPSECOG'))
         out['Class_of_Case']       = en(self._dec('CLASS95'))
         out['Diag_at_Hosp']        = en(self._dec('CLASSOFDIAG'))

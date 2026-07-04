@@ -18,6 +18,22 @@ def decode_er_pr(raw_series: pd.Series, receptor: str) -> pd.Series:
 
     Codebook: Cancer-SSF-Manual (breast), p.127-130
     Codes: 000-100 (%), W/I/S prefix (staining), 110-121 (special), 888/988/999
+
+    Note -- Allred score coverage: the codebook (p.121-123) actually defines
+    TWO independent encoding schemes for this field, chosen per how the
+    pathology report describes the result. The scheme this function
+    literally implements ("letter + literal percentage", e.g. 'S70' = Strong
+    staining, 70%) is scheme A. Scheme B, Allred score (intensity 0/W/I/S
+    + a 2-digit PROPORTION SCORE 00/06/22/49/84 for 0/1-10/11-33/34-66/>=67%
+    positive cells), is not separately implemented -- but its proportion-
+    score codes happen to equal the mean %-positive of their range, so this
+    function's existing logic decodes them correctly by coincidence (e.g.
+    'S84' -> "Strong staining, 84%", a faithful reading of Allred 3+5). See
+    tests/test_encoders.py::TestEncodeErPr::test_allred_score_codes_decode_and_roundtrip
+    and fable-opinion.md (工作5) for the full analysis -- including the one
+    still-unconfirmed cell (Allred proportion score 1, <1% positive cells),
+    which needs a human to verify against the actual PDF table before any
+    special-casing is added for it.
     """
     def _decode(v):
         v = _norm(v)

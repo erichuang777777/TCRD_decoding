@@ -138,6 +138,36 @@ class TestEncodeErPr:
         assert 'PR' in dec.iloc[0]
         assert enc.iloc[0] == '70'
 
+    @pytest.mark.parametrize('code,expected_label', [
+        # Allred score (Cancer-SSF-Manual, breast SSF1, p.123): first digit/
+        # letter is intensity (0/W/I/S), remaining 2 digits are a proportion
+        # SCORE (0-5) whose code happens to equal the mean of that score's
+        # positive-cell-% range (00->0%, 06->~6%, 22->~22%, 49->~49%,
+        # 84->~67%+ mean ~84%). This coincides exactly with the "letter +
+        # literal percentage" scheme decode_er_pr already implements, so
+        # Allred-encoded values are decoded correctly by accident of design
+        # -- pinned here so nobody "fixes" decode_er_pr in a way that breaks
+        # Allred without realizing it's covered. See fable-opinion.md 工作5
+        # for the full analysis, including the one still-uncertain cell
+        # (Allred proportion score 1, <1%) that needs human PDF verification.
+        ('000', 'ER Negative (0%)'),
+        ('S84', 'ER Positive (Strong staining, 84%)'),
+        ('S06', 'ER Positive (Strong staining, 6%)'),
+        ('I22', 'ER Positive (Intermediate staining, 22%)'),
+        ('S49', 'ER Positive (Strong staining, 49%)'),
+        ('120', 'ER Negative (<1% or not specified)'),
+        ('110', 'ER Positive (proportion unclear)'),
+    ])
+    def test_allred_score_codes_decode_and_roundtrip(self, code, expected_label):
+        dec = decode_er_pr(pd.Series([code]), 'ER')
+        assert dec.iloc[0] == expected_label
+        enc = encode_er_pr(dec, 'ER')
+        # '000' round-trips to the numerically-equivalent canonical '0'
+        # (leading zeros aren't clinically meaningful here); every other
+        # code round-trips byte-identical.
+        expected_code = '0' if code == '000' else code
+        assert enc.iloc[0] == expected_code
+
 
 class TestEncodeKi67:
     @pytest.mark.parametrize('code', [0, 1, 13, 14, 30, 31, 100, 888, 988, 998, 999,
@@ -317,6 +347,39 @@ class TestEncodeGenericSSF:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Structural fields (AJCC/PRESTYPE/STYPE95/PRESLNSCO/SLNSCO95) -- every key
+# of TCRDecoder._map()'s code tables round-trips through encode_structural_map.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _map_decode_one(code_map: dict, v: str) -> str:
+    """Mirrors TCRDecoder._map()'s exact per-cell decode logic."""
+    v = str(v).strip()
+    return code_map.get(v, code_map.get(v.lstrip('0'), f'Code {v}'))
+
+
+class TestEncodeStructuralFields:
+    @pytest.mark.parametrize('code_map_name', [
+        'AJCC_MAP', 'PRESTYPE_MAP', 'STYPE95_MAP', 'LNSCO_MAP',
+    ])
+    def test_every_code_roundtrips(self, code_map_name):
+        from tcr_decoder import core
+        code_map = getattr(core, code_map_name)
+        for code in code_map:
+            label = _map_decode_one(code_map, code)
+            encoded = encode_structural_map(pd.Series([label]), code_map).iloc[0]
+            # Two different raw codes can share identical label text (e.g.
+            # legacy 2-digit '20' and 3-digit '020'-style aliases for the
+            # same real-world meaning) -- encode() then returns whichever
+            # code is canonical (first-listed) for that label, which is not
+            # necessarily this exact `code`. What must hold is that the
+            # canonical code decodes to the SAME label, i.e. round-tripping
+            # is label-preserving even when it isn't code-identical.
+            assert _map_decode_one(code_map, encoded) == label, (
+                f'{code_map_name}[{code!r}] -> {label!r} -> {encoded!r} '
+                f'does not decode back to the same label')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # apply_ssf_profile <-> apply_ssf_encode_profile, across all cancer groups
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -403,11 +466,19 @@ class TestTCREncoder:
         assert 'Pagets_Disease' in enc.unencoded_columns
         assert 'LVI_SSF' in enc.unencoded_columns
 
-    def test_lung_performance_status_collision_is_flagged(self, lung_clean_df):
+    def test_lung_generic_performance_status_has_no_codetable(self, lung_clean_df):
+        """'Performance_Status' (generic KPSECOG, all cancer types) is decoded
+        by trusting the input file's own pre-existing column, not a code
+        table this package owns -- it stays unencoded regardless of cancer
+        group. This used to collide with lung's SSF3 (ECOG/KPS) column of
+        the same name; SSF3 now has its own column ('Performance_Status_SSF3')
+        and round-trips normally -- see the next test."""
         enc = TCREncoder(lung_clean_df)
-        enc.encode(on_error='raise')
+        raw = enc.encode(on_error='raise')
         assert enc.cancer_group == 'lung'
         assert 'Performance_Status' in enc.unencoded_columns
+        assert 'Performance_Status_SSF3' not in enc.unencoded_columns
+        assert 'SSF3_raw' in raw.columns
 
     def test_colorectum_encode_runs_without_raising(self, colorectum_clean_df):
         enc = TCREncoder(colorectum_clean_df)

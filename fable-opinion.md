@@ -4,6 +4,19 @@
 > 撰寫日期：2026-07-04
 > 對象分支：`claude/taiwan-cancer-registry-converter-qvv2r0`（PR #1，draft，目標 main）
 
+> ## ⚠️ 執行狀態更新（同一分支的後續 session）
+> 本文件列出的**工作 1-6 全部已完成**（同一天，緊接在本文件撰寫之後）：
+> - 工作1：lung SSF3 已改名為 `Performance_Status_SSF3`，KPSECOG 保留原名 `Performance_Status`，兩者不再互相覆蓋。所有引用點（`ssf_registry.py`／`core.py`／`encoder.py`／`data_dictionary.py` 與三個測試檔）已同步更新。
+> - 工作2：`pyproject.toml` 的 build-backend 已修正，`pip install -e .` 已驗證可正常運作。
+> - 工作3：兩個既有測試失敗都已修正（3a 改用 `warnings.simplefilter('error')`；3b 改用 `pd.api.types.is_numeric_dtype`）。
+> - 工作4：`.github/workflows/test.yml` 已新增（YAML 語法已驗證，實際 CI 執行結果仍待 push 後觀察）。
+> - 工作5：採用文件建議的「輕量處理」——未重寫 `decode_er_pr`/`encode_er_pr`，只在 `decode_er_pr` docstring 補充 Allred 雙制度說明，並新增 7 組 Allred 代碼的 pinning 測試（`test_allred_score_codes_decode_and_roundtrip`）。<1% 那一格仍標記為待人工確認，未做任何猜測性處理。
+> - 工作6：已補上結構性欄位（AJCC/PRESTYPE/STYPE95/LNSCO）的完整 round-trip 測試；README 測試數字已更新為 950+（全綠，0 failed）。
+>
+> 目前全套測試：`python -m pytest tests/ -q` → **954 passed, 0 failed**（本文件原記載的 2 個既有失敗已修好，現在是真正全綠）。
+>
+> **後續模型接手時**：以上工作不用重做。如果又發現新問題，请用同樣的「先讀 PDF 原文驗證、標記不確定、寫測試釘住」原則繼續。
+
 ---
 
 ## 給接手模型的話（請先讀這段）

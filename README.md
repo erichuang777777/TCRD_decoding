@@ -281,7 +281,7 @@ pytest tests/ --cov=tcr_decoder --cov-report=term-missing
 pytest tests/test_adversarial.py -v
 ```
 
-**940+ tests** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression, pipeline bug regression (Round 3), mathematical formula verification (Round 4), encode-direction round trips across all 11 cancer profiles (`test_encoders.py`)
+**950+ tests, all passing** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression, pipeline bug regression (Round 3), mathematical formula verification (Round 4), encode-direction round trips across all 11 cancer profiles (`test_encoders.py`)
 
 ---
 

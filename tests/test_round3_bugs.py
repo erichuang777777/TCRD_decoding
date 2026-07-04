@@ -62,8 +62,9 @@ class TestK1_LeadingZeroPatientID:
         dec = TCRDecoder(path).load(skip_input_check=True)
 
         pk = dec._raw_df['PK_raw']
-        # Must be string dtype — not Int64 or object-of-ints
-        assert pk.dtype == object
+        # Must be a text dtype (object, or pandas>=2's StringDtype) — not
+        # Int64/float, which would silently drop the leading zeros.
+        assert not pd.api.types.is_numeric_dtype(pk)
         assert pk.tolist() == ['0001234', '0005678', '0099999']
 
     def test_mixed_numeric_and_zero_padded_pk(self, tmp_path):
