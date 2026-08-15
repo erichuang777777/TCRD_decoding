@@ -525,3 +525,31 @@ def test_vital_status_and_cancer_status_do_not_share_a_field_number():
     # that could not be confirmed) -- what matters is that it is flagged as
     # unverified, so nothing treats it as evidence of the real field.
     assert 'Cancer_Status' in UNVERIFIED_FIELD_NUMBERS
+
+
+def test_every_longform_zh_table_matches_its_english_codemap_exactly():
+    """The FHIR CodeSystem display must be the code book's own Chinese text
+    (found during PR review: the IG's own documented terminology contract
+    says so, but no Chinese text existed anywhere for the structural fields
+    to draw on -- only the SSF fields had zh_definition()). A mismatched key
+    set here would mean a code decodes in English but has no Chinese
+    counterpart, or vice versa -- either way, the IG's CodeSystem would be
+    incomplete or inventing a code that doesn't exist."""
+    from tcr_decoder.longform_codes import LONGFORM_CODE_MAPS
+    from tcr_decoder.longform_zh import LONGFORM_ZH
+
+    for tag, (code_map, seq) in sorted(LONGFORM_CODE_MAPS.items()):
+        zh = LONGFORM_ZH.get(tag)
+        assert zh is not None, f'{tag} (#{seq}): no Chinese table registered'
+        en_keys, zh_keys = set(code_map.mapping), set(zh)
+        assert en_keys == zh_keys, (
+            f'{tag} (#{seq}): missing={sorted(en_keys - zh_keys)[:5]} '
+            f'extra={sorted(zh_keys - en_keys)[:5]}')
+
+
+def test_confer_zh_tables_match_their_english_codemaps():
+    from tcr_decoder.longform_codes import CONFIRMATION_HAEM_MAP, CONFIRMATION_SOLID_MAP
+    from tcr_decoder.longform_zh import LONGFORM_ZH_CONFER_HAEM, LONGFORM_ZH_CONFER_SOLID
+
+    assert set(CONFIRMATION_SOLID_MAP.mapping) == set(LONGFORM_ZH_CONFER_SOLID)
+    assert set(CONFIRMATION_HAEM_MAP.mapping) == set(LONGFORM_ZH_CONFER_HAEM)
