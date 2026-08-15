@@ -46,10 +46,10 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
-from tcr_decoder.core import AJCC_MAP, PRESTYPE_MAP, STYPE95_MAP, LNSCO_MAP
+from tcr_decoder.core import AJCC_MAP, LNSCO_MAP
 from tcr_decoder.encoders import (
     batch_encode, encode_structural_map, encode_ebrt_additive, encode_lnpositive,
-    encode_lnexam,
+    encode_lnexam, encode_surgery,
 )
 from tcr_decoder.ssf_registry import (
     apply_ssf_encode_profile, detect_cancer_group_from_series, get_ssf_profile,
@@ -61,8 +61,6 @@ logger = logging.getLogger('tcr_decoder')
 # clean-column-name -> (raw TCR field name, encoder callable)
 STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'AJCC_Edition':              ('AJCC',      lambda s: encode_structural_map(s, AJCC_MAP)),
-    'Surgery_Type_Other_Hosp':   ('PRESTYPE',  lambda s: encode_structural_map(s, PRESTYPE_MAP)),
-    'Surgery_Type_This_Hosp':    ('STYPE95',   lambda s: encode_structural_map(s, STYPE95_MAP)),
     'Regional_LN_Surgery_Other': ('PRESLNSCO', lambda s: encode_structural_map(s, LNSCO_MAP)),
     'Regional_LN_Surgery_This':  ('SLNSCO95',  lambda s: encode_structural_map(s, LNSCO_MAP)),
     'EBRT_Technique':            ('EBRT',      encode_ebrt_additive),
@@ -173,7 +171,26 @@ class TCREncoder:
             series = df[clean_col].astype(str).replace('nan', '')
             out[f'{raw_field}_raw'] = batch_encode(encoder_fn, series, on_error=on_error)
 
-        handled_clean_cols = set(ssf_input_cols) | set(STRUCTURAL_FIELD_ENCODERS)
+        # Surgery of primary site is site-specific (Appendix B), so its
+        # encoder needs the topography code alongside the label.
+        site = df.get('Primary_Site_Code')
+        for clean_col, raw_field in (('Surgery_Type_Other_Hosp', 'PRESTYPE'),
+                                     ('Surgery_Type_This_Hosp', 'STYPE95')):
+            if clean_col not in df.columns:
+                continue
+            if site is None:
+                self.unencoded_columns[clean_col] = (
+                    'Surgery codes are defined per primary site (Longform '
+                    '附錄B), and this DataFrame has no Primary_Site_Code column'
+                )
+                continue
+            self._log_msg(f'Encoding {clean_col} -> {raw_field}_raw')
+            series = df[clean_col].astype(str).replace('nan', '')
+            out[f'{raw_field}_raw'] = batch_encode(
+                lambda s: encode_surgery(s, site), series, on_error=on_error)
+
+        handled_clean_cols = (set(ssf_input_cols) | set(STRUCTURAL_FIELD_ENCODERS)
+                              | {'Surgery_Type_Other_Hosp', 'Surgery_Type_This_Hosp'})
         for col in df.columns:
             if (col not in handled_clean_cols and col != 'Primary_Site_Code'
                     and col not in self.unencoded_columns):

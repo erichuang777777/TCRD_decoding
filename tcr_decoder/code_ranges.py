@@ -505,24 +505,18 @@ LONGFORM: Dict[str, Tuple[int, FrozenSet[str], str]] = {
                   'Longform p.207 申報醫院區域淋巴結手術範圍'),
 }
 
-# Appendix B surgery codes are SITE-SPECIFIC: the 編碼範圍 line is the same
+# Appendix B surgery codes are SITE-SPECIFIC. The 編碼範圍 line is the same
 # for every site (000, 100-800, 900, 980, 990 -- Longform-Manual p.186/188),
-# but which of those 705 codes exist, and what they mean, comes from the
-# site's own Appendix B table. Only breast has been transcribed.
-SURGERY_CODES: Dict[str, Tuple[int, FrozenSet[str], str]] = {
-    'breast': (3, _codes((
-        '000', '200', '210', '215', '240', '290',
-        '300', '310', '311', '312', '313', '314',
-        '320', '321', '322', '323', '324',
-        '400', '410', '411', '412', '413', '414',
-        '420', '421', '422', '423', '424',
-        '500', '510', '530', '540', '550', '560',
-        '520', '570', '580', '590', '630',
-        '600', '610', '640', '650', '660', '670',
-        '620', '680', '690', '730', '740',
-        '700', '710', '720', '760', '800', '900', '990',
-    )), 'Longform 附錄B pp.378-380 Breast C500-C509 原發部位手術方式'),
-}
+# but which of those codes exist, and what they mean, comes from the site's
+# own Appendix B table: all 30 of them live in tcr_decoder/surgery_codes.py,
+# generated from the manual by scripts/generate_surgery_codes.py.
+SURGERY_FIELD_WIDTH = 3
+
+
+def legal_surgery_codes(tcode1) -> FrozenSet[str]:
+    """Legal PRESTYPE / STYPE95 codes for one primary site."""
+    from tcr_decoder.surgery_codes import legal_surgery_codes as _lookup
+    return _lookup(tcode1)
 
 
 CODE_RANGES: Dict[str, Dict[str, Tuple[int, FrozenSet[str], str]]] = {

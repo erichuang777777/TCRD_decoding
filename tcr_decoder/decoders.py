@@ -460,6 +460,36 @@ def decode_lnexam(raw_series: pd.Series) -> pd.Series:
     return raw_series.fillna('').astype(str).apply(_decode)
 
 
+# ─── Surgery of primary site (Appendix B, per site) ─────────────────
+
+def decode_surgery(raw_series: pd.Series, tcode1_series: pd.Series) -> pd.Series:
+    """Decode PRESTYPE / STYPE95 using the primary site's Appendix B table.
+
+    Codebook: Longform-Manual p.186/188 for the field, 附錄B pp.349-391 for
+    the per-site meanings. The same code is a different operation in a
+    different organ -- 660 is an implant reconstruction in the breast -- so
+    the topography code has to travel with the surgery code.
+    """
+    from tcr_decoder.core import LEGACY_SURGERY_CODES
+    from tcr_decoder.surgery_codes import surgery_codes
+
+    tcode1 = tcode1_series.reindex(raw_series.index)
+
+    def _decode(v, site):
+        v = _norm(v)
+        if not v:
+            return ''
+        table = surgery_codes(site)
+        if v in table:
+            return table[v]
+        if v in LEGACY_SURGERY_CODES:
+            return LEGACY_SURGERY_CODES[v]
+        return f'Code {v}'
+
+    return pd.Series([_decode(v, s) for v, s in zip(raw_series, tcode1)],
+                     index=raw_series.index)
+
+
 # ─── Cause of Death ─────────────────────────────────────────────────
 
 def decode_cause_of_death(series: pd.Series) -> pd.Series:

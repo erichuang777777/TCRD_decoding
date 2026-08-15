@@ -134,7 +134,8 @@ is no code table in this package to invert for those, and `TCREncoder`
 deliberately reports them in `unencoded_columns` instead of guessing. What it
 *does* reconstruct with full fidelity is every SSF1-10 biomarker field across
 all 16 cancer profiles, plus the structural fields with a real code table
-(AJCC, surgery codes, regional-node surgery codes, EBRT, LNEXAM, LN_POSITI),
+(AJCC, per-site surgery codes, regional-node surgery codes, EBRT, LNEXAM,
+LN_POSITI),
 since those have real decode logic (and now, real inverse logic) in this
 codebase.
 
@@ -214,11 +215,20 @@ can decide it alone. `TCRDecoder` passes `MCODE_raw` automatically when the
 column is present; without a morphology column those cases fall back to their
 site and a nodal lymphoma reads as `generic`.
 
-The two surgery-of-primary-site fields (`PRESTYPE`, `STYPE95`) now share one
-Appendix B table instead of two different legacy vocabularies; breast is
-transcribed, the other ~29 sites are not.
+Surgery of primary site (`PRESTYPE`, `STYPE95`) is defined **per primary
+site** by Appendix B, so decoding it needs the topography code:
 
-Still outstanding: the other 62 Longform fields have no code table yet — see
+```python
+decode_surgery(pd.Series(['660']), pd.Series(['C50.9']))
+# 'Total (simple) mastectomy WITHOUT contralateral, implant reconstruction'
+decode_surgery(pd.Series(['660']), pd.Series(['C34.1']))   # not a lung code
+```
+
+All 30 Appendix B tables (686 codes, 520 topography codes) are generated
+straight from the PDF by `scripts/generate_surgery_codes.py`, so a new edition
+of the manual is a re-run rather than a re-transcription.
+
+Still outstanding: the other 61 Longform fields have no code table yet — see
 [`docs/codebook_conformance_findings.md`](docs/codebook_conformance_findings.md).
 The report's `Notes` sheet says the same.
 

@@ -384,6 +384,32 @@ def encode_lnexam(series: pd.Series) -> pd.Series:
     return series.apply(_encode)
 
 
+def encode_surgery(series: pd.Series, tcode1_series: pd.Series) -> pd.Series:
+    """Inverse of decode_surgery(). Needs the site for the same reason."""
+    from tcr_decoder.core import LEGACY_SURGERY_CODES
+    from tcr_decoder.surgery_codes import surgery_codes
+
+    legacy_rev = {label: code for code, label in LEGACY_SURGERY_CODES.items()}
+    tcode1 = tcode1_series.reindex(series.index)
+
+    def _encode(v, site):
+        v = _clean(v)
+        if not v:
+            return ''
+        for code, label in surgery_codes(site).items():
+            if label == v:
+                return code
+        if v in legacy_rev:
+            return legacy_rev[v]
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        raise KeyError(f'Unrecognized surgery label for {site!r}: {v!r}')
+
+    return pd.Series([_encode(v, s) for v, s in zip(series, tcode1)],
+                     index=series.index)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # EBRT technique (additive bitmask) -- structural
 # ─────────────────────────────────────────────────────────────────────────────

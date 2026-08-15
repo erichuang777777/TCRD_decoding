@@ -433,9 +433,10 @@ def _map_decode_one(code_map: dict, v: str) -> str:
 
 
 class TestEncodeStructuralFields:
-    @pytest.mark.parametrize('code_map_name', [
-        'AJCC_MAP', 'PRESTYPE_MAP', 'STYPE95_MAP', 'LNSCO_MAP',
-    ])
+    # PRESTYPE / STYPE95 are no longer flat dicts: Appendix B defines their
+    # codes per primary site, so they are covered by the per-site round trip
+    # in test_codebook_conformance.py instead.
+    @pytest.mark.parametrize('code_map_name', ['AJCC_MAP', 'LNSCO_MAP'])
     def test_every_code_roundtrips(self, code_map_name):
         from tcr_decoder import core
         code_map = getattr(core, code_map_name)

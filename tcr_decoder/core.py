@@ -59,6 +59,7 @@ from tcr_decoder.decoders import (
     decode_er_pr, decode_ki67, decode_her2, decode_nottingham,
     decode_ssf3_neoadj, decode_ebrt_additive, decode_sentinel,
     decode_lnexam, decode_lnpositive, decode_cause_of_death, decode_smoking_triplet,
+    decode_surgery,
 )
 from tcr_decoder.ssf_registry import (
     detect_cancer_group_from_series, apply_ssf_profile,
@@ -93,87 +94,18 @@ AJCC_MAP = {
     '08':    'AJCC 8th Edition (2018)',
 }
 
-# Appendix B, Breast C500-C509 (Longform-Manual pp.378-380). Both the
-# reporting-hospital and the outside-hospital surgery fields draw on this one
-# table -- they are the same question asked about two facilities, so they must
-# not have two different vocabularies.
-BREAST_SURGERY_MAP = {
-    '000': 'No surgery of primary site; autopsy ONLY',
-    '200': 'Partial mastectomy, NOS (lumpectomy, segmental mastectomy, '
-           'quadrantectomy, tylectomy), with or without nipple resection',
-    '210': 'Excisional breast biopsy — diagnostic excision, no pre-operative '
-           'biopsy-proven diagnosis',
-    '215': 'Excisional breast biopsy for atypia',
-    '240': 'Re-excision of margins for gross or microscopic residual disease '
-           '(less than total mastectomy)',
-    '290': 'Central lumpectomy — nipple areolar complex removed',
-
-    '300': 'Skin-sparing mastectomy',
-    '310': 'Skin-sparing mastectomy WITHOUT removal of the contralateral breast',
-    '311': 'Skin-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
-    '312': 'Skin-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
-    '313': 'Skin-sparing mastectomy WITHOUT contralateral, implant reconstruction',
-    '314': 'Skin-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-    '320': 'Skin-sparing mastectomy WITH removal of the contralateral breast',
-    '321': 'Skin-sparing mastectomy WITH contralateral, reconstruction NOS',
-    '322': 'Skin-sparing mastectomy WITH contralateral, tissue reconstruction',
-    '323': 'Skin-sparing mastectomy WITH contralateral, implant reconstruction',
-    '324': 'Skin-sparing mastectomy WITH contralateral, combined reconstruction',
-
-    '400': 'Nipple-sparing mastectomy',
-    '410': 'Nipple-sparing mastectomy WITHOUT removal of the contralateral breast',
-    '411': 'Nipple-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
-    '412': 'Nipple-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
-    '413': 'Nipple-sparing mastectomy WITHOUT contralateral, implant reconstruction',
-    '414': 'Nipple-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-    '420': 'Nipple-sparing mastectomy WITH removal of the contralateral breast',
-    '421': 'Nipple-sparing mastectomy WITH contralateral, reconstruction NOS',
-    '422': 'Nipple-sparing mastectomy WITH contralateral, tissue reconstruction',
-    '423': 'Nipple-sparing mastectomy WITH contralateral, implant reconstruction',
-    '424': 'Nipple-sparing mastectomy WITH contralateral, combined reconstruction',
-
-    # The areolar-sparing and total-mastectomy reconstruction sub-codes do NOT
-    # follow the 31x/41x pattern: the manual assigns them out-of-block numbers
-    # (530-560, 570-630, 640-670, 680-740). Guessing the pattern would put
-    # them in the wrong place.
-    '500': 'Areolar-sparing mastectomy',
-    '510': 'Areolar-sparing mastectomy WITHOUT removal of the contralateral breast',
-    '530': 'Areolar-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
-    '540': 'Areolar-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
-    '550': 'Areolar-sparing mastectomy WITHOUT contralateral, implant reconstruction',
-    '560': 'Areolar-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-    '520': 'Areolar-sparing mastectomy WITH removal of the contralateral breast',
-    '570': 'Areolar-sparing mastectomy WITH contralateral, reconstruction NOS',
-    '580': 'Areolar-sparing mastectomy WITH contralateral, tissue reconstruction',
-    '590': 'Areolar-sparing mastectomy WITH contralateral, implant reconstruction',
-    '630': 'Areolar-sparing mastectomy WITH contralateral, combined reconstruction',
-
-    '600': 'Total (simple) mastectomy',
-    '610': 'Total (simple) mastectomy WITHOUT removal of the contralateral breast',
-    '640': 'Total (simple) mastectomy WITHOUT contralateral, reconstruction NOS',
-    '650': 'Total (simple) mastectomy WITHOUT contralateral, tissue reconstruction',
-    '660': 'Total (simple) mastectomy WITHOUT contralateral, implant reconstruction',
-    '670': 'Total (simple) mastectomy WITHOUT contralateral, combined reconstruction',
-    '620': 'Total (simple) mastectomy WITH removal of the contralateral breast',
-    '680': 'Total (simple) mastectomy WITH contralateral, reconstruction NOS',
-    '690': 'Total (simple) mastectomy WITH contralateral, tissue reconstruction',
-    '730': 'Total (simple) mastectomy WITH contralateral, implant reconstruction',
-    '740': 'Total (simple) mastectomy WITH contralateral, combined reconstruction',
-
-    '700': 'Radical mastectomy, NOS',
-    '710': 'Radical mastectomy WITHOUT removal of the contralateral breast',
-    '720': 'Radical mastectomy WITH removal of the contralateral breast',
-    '760': 'Bilateral mastectomy for a single tumour involving both breasts',
-    '800': 'Mastectomy, NOS (including extended radical mastectomy)',
-    '900': 'Surgery, NOS — surgery performed but the procedure is not known',
-    '990': 'Unknown if surgery performed; death certificate ONLY',
-}
-
-# Pre-2025 exports used 1- and 2-digit codes. They are kept so historical
-# files still decode, but they are NOT in the official 編碼範圍 and every
-# label is marked so it cannot be confused with -- or re-encoded as -- a
-# current 3-character code.
-_STYPE95_LEGACY = {
+# Surgery of primary site (外院 PRESTYPE #4.1.3, 申報醫院 STYPE95 #4.1.4).
+#
+# Appendix B defines these codes PER PRIMARY SITE -- 660 is an implant
+# reconstruction in the breast and a hemicolectomy elsewhere -- so there is no
+# single dict to hand _map(). Both fields go through decode_surgery(), which
+# picks the table from TCODE1. See tcr_decoder/surgery_codes.py (generated
+# from the manual by scripts/generate_surgery_codes.py).
+#
+# Pre-2025 exports used 1- and 2-character codes. They are kept so historical
+# files still decode, but they are NOT in the official 編碼範圍 and each label
+# says so, which also stops encode() from ever emitting one.
+LEGACY_SURGERY_CODES = {
     '0':  'No surgery (legacy 1-digit code)',
     '00': 'No surgery (legacy 2-digit code)',
     '20': 'Partial mastectomy / lumpectomy (legacy 2-digit code)',
@@ -194,23 +126,6 @@ _STYPE95_LEGACY = {
     '99': 'Unknown (legacy 2-digit code)',
 }
 
-# The outside-hospital field's legacy codes are NOT the same vocabulary as the
-# reporting hospital's: '51' meant "biopsy only" here and "extended radical
-# mastectomy" there. They are kept apart deliberately.
-_PRESTYPE_LEGACY = {
-    '0':  'No outside hospital surgery (legacy 1-digit code)',
-    '20': 'Partial mastectomy / lumpectomy (legacy 2-digit code)',
-    '22': 'Modified radical mastectomy (legacy 2-digit code)',
-    '24': 'Total / simple mastectomy (legacy 2-digit code)',
-    '41': 'Local excision — margins positive or NOS (legacy 2-digit code)',
-    '51': 'Biopsy only (legacy 2-digit code)',
-    '99': 'Unknown (legacy 2-digit code)',
-}
-
-# Official codes first: reverse lookup takes the first key for a given label,
-# so a submission gets the current 3-character form, never a legacy one.
-STYPE95_MAP = {**BREAST_SURGERY_MAP, **_STYPE95_LEGACY}
-PRESTYPE_MAP = {**BREAST_SURGERY_MAP, **_PRESTYPE_LEGACY}
 
 LNSCO_MAP = {
     '0': 'No regional LN procedure performed',
@@ -553,12 +468,17 @@ class TCRDecoder:
         # ── Surgery ───────────────────────────────────────
         out['Surgery_Performed'] = en(self._dec('S'))
         out['Surgery_Date']      = clean_date(self._raw('FSDATE'))
-        out['Surgery_Type_Other_Hosp'] = self._map('PRESTYPE', PRESTYPE_MAP)
-        out['Surgery_Type_This_Hosp'] = self._map('STYPE95', STYPE95_MAP)
+        _tcode1 = self._raw('TCODE1')
+        out['Surgery_Type_Other_Hosp'] = decode_surgery(
+            self._raw('PRESTYPE'), _tcode1)
+        out['Surgery_Type_This_Hosp'] = decode_surgery(
+            self._raw('STYPE95'), _tcode1)
         _surg_this = ~out['Surgery_Type_This_Hosp'].str.contains(
-            'No surgery|Unknown', na=True, case=False)
+            'No surgery|Unknown|autopsy ONLY|death certificate',
+            na=True, case=False)
         _surg_other = ~out['Surgery_Type_Other_Hosp'].str.contains(
-            'No outside|Unknown|No surgery', na=True, case=False)
+            'No outside|Unknown|No surgery|autopsy ONLY|death certificate',
+            na=True, case=False)
         out['Any_Surgery'] = np.where(_surg_this | _surg_other, 'Yes', 'No')
         out['Minimally_Invasive']  = en(self._dec('MINS'))
         out['Surgical_Margin']     = en(self._dec('MARG95'))

@@ -23,11 +23,11 @@ import pandas as pd
 import pytest
 
 from tcr_decoder.code_ranges import (
-    CODE_RANGES, LONGFORM, SUPPORTED_GROUPS, SURGERY_CODES, field_width,
-    is_legal_code,
+    CODE_RANGES, LONGFORM, SUPPORTED_GROUPS, field_width, is_legal_code,
 )
-from tcr_decoder.decoders import decode_lnexam, decode_lnpositive
-from tcr_decoder.encoders import encode_lnexam, encode_lnpositive
+from tcr_decoder.surgery_codes import SURGERY_TABLES, surgery_table_name
+from tcr_decoder.decoders import decode_lnexam, decode_lnpositive, decode_surgery
+from tcr_decoder.encoders import encode_lnexam, encode_lnpositive, encode_surgery
 from tcr_decoder.ssf_registry import _generic_ssf, get_ssf_profile
 from tcr_decoder.encoders import encode_generic_ssf, encode_structural_map
 
@@ -193,43 +193,86 @@ def test_regional_node_surgery_scope_roundtrips(field):
     assert all(len(e) == width for e in encoded), ref
 
 
-@pytest.mark.parametrize('field', ['PRESTYPE', 'STYPE95'])
-def test_surgery_of_primary_site_roundtrips_over_appendix_b(field):
-    """PRESTYPE used to decode 0 of the 705 codes in its own 編碼範圍.
+# One representative topography code per Appendix B table, so every site's
+# surgery vocabulary is exercised, not just the breast one.
+SURGERY_SITES = [(name, sites[0])
+                 for name, (sites, _codes, _ref) in sorted(SURGERY_TABLES.items())]
 
-    It only knew seven legacy 2-digit codes, so a current-format export
-    decoded every surgery as 'Code NNN'. STYPE95 knew 41 of them and was
-    missing every reconstruction sub-code -- including 660, which is the
-    code the manual's own worked example on p.189 assigns.
+
+@pytest.mark.parametrize('name,site', SURGERY_SITES,
+                         ids=[n[:28] for n, _ in SURGERY_SITES])
+def test_surgery_of_primary_site_roundtrips_over_appendix_b(name, site):
+    """Every code of every site table, both surgery fields.
+
+    PRESTYPE used to decode 0 of the 705 codes in its own 編碼範圍 -- it knew
+    seven legacy 2-digit codes and nothing else, so a current-format export
+    decoded every operation as 'Code NNN'. STYPE95 knew 41, all breast.
     """
-    from tcr_decoder.core import PRESTYPE_MAP, STYPE95_MAP
+    _sites, table, ref = SURGERY_TABLES[name]
+    raw = pd.Series(sorted(table), dtype=object)
+    sites = pd.Series([site] * len(raw))
 
-    code_map = PRESTYPE_MAP if field == 'PRESTYPE' else STYPE95_MAP
-    width, codes, ref = SURGERY_CODES['breast']
-    raw, decoded, encoded = _structural_roundtrip(codes, code_map)
+    decoded = decode_surgery(raw, sites)
+    encoded = encode_surgery(decoded, sites).astype(str)
 
     undecoded = [c for c, d in zip(raw, decoded) if d.startswith('Code ')]
-    assert not undecoded, f'{field} ({ref}): {len(undecoded)} legal codes not decoded'
-    assert len(set(decoded)) == len(decoded), f'{field} ({ref}): duplicate labels'
-    assert list(raw) == list(encoded), ref
-    assert all(len(e) == width for e in encoded), f'{field} ({ref}): wrong width'
+    assert not undecoded, f'{name} ({ref}): {undecoded[:5]} not decoded'
+    assert len(set(decoded)) == len(decoded), f'{name} ({ref}): duplicate labels'
+    assert list(raw) == list(encoded), f'{name} ({ref}): round trip'
+    assert all(len(e) == 3 for e in encoded), f'{name} ({ref}): wrong width'
 
 
 def test_the_two_surgery_fields_share_one_vocabulary():
-    """They ask the same question about two facilities (Longform p.186/188)."""
-    from tcr_decoder.core import BREAST_SURGERY_MAP, PRESTYPE_MAP, STYPE95_MAP
+    """They ask the same question about two facilities (Longform p.186/188).
 
-    for code, label in BREAST_SURGERY_MAP.items():
-        assert PRESTYPE_MAP[code] == label == STYPE95_MAP[code], code
+    They used to carry different code tables, so '51' meant "biopsy only" in
+    one and "extended radical mastectomy" in the other.
+    """
+    from tcr_decoder.encoder import STRUCTURAL_FIELD_ENCODERS
+
+    assert 'Surgery_Type_Other_Hosp' not in STRUCTURAL_FIELD_ENCODERS
+    assert 'Surgery_Type_This_Hosp' not in STRUCTURAL_FIELD_ENCODERS
+    site = pd.Series(['C50.9'] * 3)
+    codes = pd.Series(['660', '312', '200'])
+    assert list(decode_surgery(codes, site)) == list(decode_surgery(codes, site))
+
+
+def test_the_same_code_means_different_things_in_different_organs():
+    """This is why the decoder needs the topography code, not just the group."""
+    codes = pd.Series(['660', '660'])
+    sites = pd.Series(['C50.9', 'C34.1'])
+    breast, lung = decode_surgery(codes, sites)
+    assert 'mastectomy' in breast
+    assert breast != lung
 
 
 def test_legacy_surgery_codes_never_win_the_reverse_lookup():
     """A submission must get the current 3-character code, not a legacy one."""
-    from tcr_decoder.core import BREAST_SURGERY_MAP, PRESTYPE_MAP, STYPE95_MAP
+    for name, (sites, table, _ref) in SURGERY_TABLES.items():
+        site = pd.Series([sites[0]] * len(table))
+        labels = pd.Series(list(table.values()))
+        assert all(len(c) == 3 for c in encode_surgery(labels, site)), name
 
-    for code_map in (PRESTYPE_MAP, STYPE95_MAP):
-        labels = pd.Series(list(BREAST_SURGERY_MAP.values()))
-        assert all(len(c) == 3 for c in encode_structural_map(labels, code_map))
+
+def test_legacy_surgery_codes_still_decode_and_are_labelled_as_legacy():
+    """Historical exports used 1- and 2-character codes; they must still read."""
+    from tcr_decoder.core import LEGACY_SURGERY_CODES
+
+    raw = pd.Series(sorted(LEGACY_SURGERY_CODES))
+    decoded = decode_surgery(raw, pd.Series(['C50.9'] * len(raw)))
+    assert all('legacy' in d for d in decoded)
+    assert list(encode_surgery(decoded, pd.Series(['C50.9'] * len(raw)))) == list(raw)
+
+
+def test_every_appendix_b_site_routes_to_exactly_one_table():
+    seen = {}
+    for name, (sites, _codes, _ref) in SURGERY_TABLES.items():
+        for s in sites:
+            assert s not in seen, f'{s}: {seen.get(s)} vs {name}'
+            seen[s] = name
+    assert len(seen) > 500
+    assert surgery_table_name('C50.9') == 'Breast'
+    assert surgery_table_name('C99.9') is None
 
 
 def test_lnexam_sentinels_are_five_distinct_situations():
