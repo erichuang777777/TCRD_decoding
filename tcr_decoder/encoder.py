@@ -48,8 +48,8 @@ import pandas as pd
 
 from tcr_decoder.core import AJCC_MAP, LNSCO_MAP
 from tcr_decoder.longform_codes import (
-    BEHAVIOR_MAP, LATERALITY_MAP, LVI_MAP, PERINEURAL_INVASION_MAP,
-    encode_confirmation,
+    BEHAVIOR_MAP, LATERALITY_MAP, LONGFORM_CODE_MAPS, LVI_MAP,
+    PERINEURAL_INVASION_MAP, encode_confirmation,
 )
 from tcr_decoder.encoders import (
     batch_encode, encode_structural_map, encode_ebrt_additive, encode_lnpositive,
@@ -74,6 +74,16 @@ STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'Behavior':                  ('MCODE5',    BEHAVIOR_MAP.encode),
     'Perineural_Invasion':       ('PNI',       PERINEURAL_INVASION_MAP.encode),
     'LVI':                       ('LVI',       LVI_MAP.encode),
+    'Chemo_Other_Hosp':          ('PREC',      LONGFORM_CODE_MAPS['PREC'][0].encode),
+    'Chemo_This_Hosp':           ('C',         LONGFORM_CODE_MAPS['C'][0].encode),
+    'Hormone_Other_Hosp':        ('PREH',      LONGFORM_CODE_MAPS['PREH'][0].encode),
+    'Hormone_This_Hosp':         ('H',         LONGFORM_CODE_MAPS['H'][0].encode),
+    'Immuno_Other_Hosp':         ('PREI',      LONGFORM_CODE_MAPS['PREI'][0].encode),
+    'Immuno_This_Hosp':          ('I',         LONGFORM_CODE_MAPS['I'][0].encode),
+    'Targeted_Other_Hosp':       ('PRETAR',    LONGFORM_CODE_MAPS['PRETAR'][0].encode),
+    'Targeted_This_Hosp':        ('TAR',       LONGFORM_CODE_MAPS['TAR'][0].encode),
+    'Other_Treatment':           ('OTH',       LONGFORM_CODE_MAPS['OTH'][0].encode),
+    'Palliative_Care':           ('PREP',      LONGFORM_CODE_MAPS['PREP'][0].encode),
 }
 
 # (cancer_group, clean_column) pairs whose value in a `clean` DataFrame does

@@ -28,7 +28,8 @@ from tcr_decoder.code_ranges import (
 from tcr_decoder.surgery_codes import SURGERY_TABLES, surgery_table_name
 from tcr_decoder.longform_codes import (
     BEHAVIOR_MAP, CONFIRMATION_HAEM_MAP, CONFIRMATION_SOLID_MAP, LATERALITY_MAP,
-    LVI_MAP, PERINEURAL_INVASION_MAP, decode_confirmation, encode_confirmation,
+    LONGFORM_CODE_MAPS, LVI_MAP, PERINEURAL_INVASION_MAP, decode_confirmation,
+    encode_confirmation,
 )
 from tcr_decoder.decoders import decode_lnexam, decode_lnpositive, decode_surgery
 from tcr_decoder.encoders import encode_lnexam, encode_lnpositive, encode_surgery
@@ -149,6 +150,8 @@ LONGFORM_CODECS = {
     'MCODE5':    (BEHAVIOR_MAP.decode, BEHAVIOR_MAP.encode),
     'PNI':       (PERINEURAL_INVASION_MAP.decode, PERINEURAL_INVASION_MAP.encode),
     'LVI':       (LVI_MAP.decode, LVI_MAP.encode),
+    **{tag: (m.decode, m.encode)
+       for tag, (m, _seq) in LONGFORM_CODE_MAPS.items()},
 }
 
 
@@ -410,3 +413,43 @@ def test_perineural_and_lvi_name_their_own_subject():
     assert not set(pni) & set(lvi)
     assert all('perineural invasion' in p.lower() for p in pni)
     assert all('lymph-vascular invasion' in l.lower() for l in lvi)
+
+
+def test_every_longform_code_map_matches_the_official_range():
+    """A transcribed table must contain exactly the 編碼範圍, no more, no less.
+
+    Getting this wrong is silent: a missing code decodes as 'Code NN' and an
+    invented one is emitted on a submission that will be rejected.
+    """
+    from tcr_decoder.code_ranges import LONGFORM
+
+    for tag, (code_map, seq) in sorted(LONGFORM_CODE_MAPS.items()):
+        width, legal, ref = LONGFORM[tag]
+        transcribed = {str(c).zfill(width) for c in code_map.mapping}
+        assert transcribed == set(legal), (
+            f'{tag} (#{seq}, {ref}): '
+            f'missing={sorted(set(legal) - transcribed)} '
+            f'extra={sorted(transcribed - set(legal))}')
+
+
+def test_paired_therapy_fields_share_their_modality_codes():
+    """外院 and 申報醫院 ask the same question about two facilities.
+
+    Only the reporting hospital has the 8x block -- an outside hospital does
+    not tell us why a planned treatment was not given.
+    """
+    for other, this in (('PREC', 'C'), ('PREH', 'H'),
+                        ('PREI', 'I'), ('PRETAR', 'TAR')):
+        a, b = LONGFORM_CODE_MAPS[other][0], LONGFORM_CODE_MAPS[this][0]
+        shared = set(a.mapping) & set(b.mapping)
+        assert all(a.mapping[c] == b.mapping[c] for c in shared), other
+        assert set(a.mapping) < set(b.mapping), other
+        assert all(c >= 80 for c in set(b.mapping) - set(a.mapping)), this
+
+
+def test_therapy_modality_codes_are_not_reused_across_therapies():
+    """02 is single-agent systemic chemo but regional hormone therapy."""
+    chemo = LONGFORM_CODE_MAPS['PREC'][0].mapping
+    hormone = LONGFORM_CODE_MAPS['PREH'][0].mapping
+    assert chemo[2] != hormone[2]
+    assert chemo[1] != hormone[1]

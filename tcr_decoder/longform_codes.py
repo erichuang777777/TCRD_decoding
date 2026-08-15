@@ -160,3 +160,193 @@ LONGFORM_CODE_MAPS = {
     'PNI':    (PERINEURAL_INVASION_MAP, '2.13.1'),
     'LVI':    (LVI_MAP, '2.13.2'),
 }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 首次療程的全身性治療 (#4.3.x, #4.4, #4.5.1, pp.268-303)
+#
+# Chemotherapy, hormone/steroid, immunotherapy and targeted therapy are each
+# reported twice: once for the outside hospital and once for the reporting
+# hospital. Both halves of a pair share the modality codes; only the reporting
+# hospital has the 8x block, because only it knows why a planned treatment was
+# not given.
+#
+# The modality codes are NOT interchangeable between therapies -- 02 is
+# "systemic chemotherapy, single agent" for chemo but "regional hormone/steroid
+# therapy" for hormones -- so each therapy has its own table.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _therapy_map(therapy, modality, trial, this_hospital, extra=None):
+    """One therapy field's table: modality + trial + (8x when this hospital)."""
+    cap = therapy[0].upper() + therapy[1:]
+    codes = {
+        0: f'No {therapy}; not part of the first course, or the cancer was '
+           f'found only at autopsy',
+        **modality,
+        **trial,
+    }
+    if this_hospital:
+        codes.update(extra or {})
+        codes.update({
+            82: f'{cap} not advised or given because of a contraindication or '
+                f'another patient risk factor (comorbidity, advanced age)',
+            83: f'{cap} not advised or given because the disease progressed',
+            85: f'{cap} was part of the planned first course, but the patient '
+                f'died or was discharged critically ill before it started',
+            86: f'{cap} was part of the planned first course and was not '
+                f'given, with no reason recorded; or it was given at another '
+                f'hospital',
+            87: f'{cap} was part of the planned first course but the patient '
+                f'or family refused it',
+            88: f'{cap} was part of the planned first course but had not '
+                f'started when the case was abstracted',
+        })
+    codes[99] = (f'Not documented, so it is unknown whether {therapy} was '
+                 f'advised or given; or the cancer is known only from a death '
+                 f'certificate')
+    return CodeMap(codes, width=2)
+
+
+_CHEMO_MODALITY = {
+    1:  'Systemic chemotherapy',
+    2:  'Systemic chemotherapy, single agent (diagnosis year 2017 or earlier)',
+    3:  'Systemic chemotherapy, more than one agent (diagnosis year 2017 or '
+        'earlier)',
+    4:  'Transarterial chemoembolisation (TACE) of the primary site only',
+    5:  'TACE of the primary site plus systemic chemotherapy',
+    6:  'TACE of the primary site plus other regional chemotherapy',
+    7:  'TACE of the primary site plus other regional and systemic chemotherapy',
+    8:  'Regional chemotherapy only, excluding TACE (intrapleural, '
+        'intrapericardial, intraperitoneal, intravesical, intrathecal, or '
+        'another regional route such as a BCNU wafer implant)',
+    9:  'Systemic and regional chemotherapy, excluding TACE',
+    10: 'TACE for liver metastases',
+    11: 'TACE for liver metastases plus systemic chemotherapy',
+    12: 'TACE for liver metastases plus other regional chemotherapy',
+    13: 'TACE for liver metastases plus other regional and systemic '
+        'chemotherapy',
+}
+
+_HORMONE_MODALITY = {
+    1: 'Systemic hormone/steroid therapy in the first course (for a '
+       'haematolymphoid malignancy, systemic steroids from the date of '
+       'diagnosis, with or without chemotherapy)',
+    2: 'Regional hormone/steroid therapy (for a haematolymphoid malignancy, '
+       'regional steroids from the date of diagnosis, with or without '
+       'chemotherapy)',
+    3: 'Systemic and regional hormone/steroid therapy',
+}
+
+_IMMUNO_MODALITY = {
+    1: 'Systemic immunotherapy drug',
+    2: 'Regional immunotherapy drug',
+    3: 'Systemic and regional immunotherapy drugs',
+    4: 'Cellular immunotherapy only',
+    5: 'Cellular immunotherapy plus a systemic immunotherapy drug',
+    6: 'Cellular immunotherapy plus a regional immunotherapy drug',
+    7: 'Cellular immunotherapy plus systemic and regional immunotherapy drugs',
+}
+
+_TARGETED_MODALITY = {
+    1: 'Targeted therapy given in the first course',
+}
+
+
+def _trial_codes(therapy, cellular=False):
+    cap = therapy[0].upper() + therapy[1:]
+    codes = {
+        20: f'Clinical-trial {therapy} only',
+        21: f'{cap} plus clinical-trial {therapy}',
+        30: f'Double-blind-trial {therapy} only',
+        31: f'{cap} plus double-blind-trial {therapy}',
+    }
+    if cellular:
+        codes.update({
+            22: f'Cellular {therapy} plus clinical-trial {therapy}',
+            23: f'Cellular {therapy} with systemic and/or regional drugs, plus '
+                f'clinical-trial {therapy}',
+            32: f'Cellular {therapy} plus double-blind-trial {therapy}',
+            33: f'Cellular {therapy} with systemic and/or regional drugs, plus '
+                f'double-blind-trial {therapy}',
+            40: f'Clinical-trial cellular {therapy} only',
+            41: f'Systemic and/or regional drugs plus clinical-trial cellular '
+                f'{therapy}',
+        })
+    return codes
+
+
+CHEMO_OTHER_MAP = _therapy_map(
+    'chemotherapy', _CHEMO_MODALITY, _trial_codes('chemotherapy'), False)
+CHEMO_THIS_MAP = _therapy_map(
+    'chemotherapy', _CHEMO_MODALITY, _trial_codes('chemotherapy'), True,
+    {81: 'Chemotherapy was the planned first course but was not advised or '
+         'given because of a genetic test result'})
+
+HORMONE_OTHER_MAP = _therapy_map(
+    'hormone/steroid therapy', _HORMONE_MODALITY,
+    _trial_codes('hormone/steroid therapy'), False)
+HORMONE_THIS_MAP = _therapy_map(
+    'hormone/steroid therapy', _HORMONE_MODALITY,
+    _trial_codes('hormone/steroid therapy'), True)
+
+IMMUNO_OTHER_MAP = _therapy_map(
+    'immunotherapy', _IMMUNO_MODALITY,
+    _trial_codes('immunotherapy', cellular=True), False)
+IMMUNO_THIS_MAP = _therapy_map(
+    'immunotherapy', _IMMUNO_MODALITY,
+    _trial_codes('immunotherapy', cellular=True), True)
+
+TARGETED_OTHER_MAP = _therapy_map(
+    'targeted therapy', _TARGETED_MODALITY, _trial_codes('targeted therapy'),
+    False)
+TARGETED_THIS_MAP = _therapy_map(
+    'targeted therapy', _TARGETED_MODALITY, _trial_codes('targeted therapy'),
+    True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 其他治療 Other Treatment (#4.5.1, p.301) -- a single field, not a pair
+# ─────────────────────────────────────────────────────────────────────────────
+
+OTHER_TREATMENT_MAP = CodeMap({
+    0:  'No other treatment; other treatment was not part of the first course',
+    1:  'Other treatment in the first course at the reporting hospital',
+    2:  'Other treatment in the first course at another hospital',
+    3:  'Other treatment in the first course at both the reporting hospital '
+        'and another hospital',
+    99: 'Not documented, so it is unknown whether other treatment was advised '
+        'or given',
+}, width=2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 申報醫院緩和照護 Palliative Care (#4.4, pp.298-300)
+# ─────────────────────────────────────────────────────────────────────────────
+
+PALLIATIVE_CARE_MAP = CodeMap({
+    0: 'No palliative care',
+    1: 'Surgery to relieve symptoms only, not for diagnosis, staging or '
+       'treatment (may include a bypass procedure)',
+    2: 'Radiotherapy to relieve symptoms only',
+    3: 'Regional or systemic drug therapy to relieve symptoms only',
+    4: 'Pain management or referral for it, with no other palliative care',
+    5: 'Two or more of codes 1, 2 and 3, without code 4',
+    6: 'One or more of codes 1, 2 and 3, together with code 4',
+    7: 'Palliative care given or referred, but the record does not say what '
+       'kind',
+    9: 'Unknown whether palliative care was given or referred; not documented',
+}, width=1)
+
+
+LONGFORM_CODE_MAPS.update({
+    'PREC':   (CHEMO_OTHER_MAP, '4.3.2'),
+    'C':      (CHEMO_THIS_MAP, '4.3.3'),
+    'PREH':   (HORMONE_OTHER_MAP, '4.3.5'),
+    'H':      (HORMONE_THIS_MAP, '4.3.6'),
+    'PREI':   (IMMUNO_OTHER_MAP, '4.3.8'),
+    'I':      (IMMUNO_THIS_MAP, '4.3.9'),
+    'PRETAR': (TARGETED_OTHER_MAP, '4.3.13'),
+    'TAR':    (TARGETED_THIS_MAP, '4.3.14'),
+    'OTH':    (OTHER_TREATMENT_MAP, '4.5.1'),
+    'PREP':   (PALLIATIVE_CARE_MAP, '4.4'),
+})

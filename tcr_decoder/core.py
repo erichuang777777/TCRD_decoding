@@ -66,8 +66,8 @@ from tcr_decoder.ssf_registry import (
     get_ssf_profile, list_supported_cancers,
 )
 from tcr_decoder.longform_codes import (
-    BEHAVIOR_MAP, LATERALITY_MAP, LVI_MAP, PERINEURAL_INVASION_MAP,
-    decode_confirmation,
+    BEHAVIOR_MAP, LATERALITY_MAP, LONGFORM_CODE_MAPS, LVI_MAP,
+    PERINEURAL_INVASION_MAP, decode_confirmation,
 )
 from tcr_decoder.validators import run_all_validators
 from tcr_decoder.input_validator import validate_input
@@ -512,18 +512,28 @@ class TCRDecoder:
         out['RT_vs_Systemic_Seq']  = en(self._dec('SEQLS'))
 
         # ── Systemic Therapy ──────────────────────────────
-        out['Chemo_Other_Hosp']    = en(self._dec('PREC'))
-        out['Chemo_This_Hosp']     = en(self._dec('C'))
-        out['Hormone_Other_Hosp']  = en(self._dec('PREH'))
-        out['Hormone_This_Hosp']   = en(self._dec('H'))
-        out['Immuno_Other_Hosp']   = en(self._dec('PREI'))
-        out['Immuno_This_Hosp']    = en(self._dec('I'))
+        out['Chemo_Other_Hosp']        = LONGFORM_CODE_MAPS['PREC'][0].decode(
+            self._raw('PREC'))
+        out['Chemo_This_Hosp']         = LONGFORM_CODE_MAPS['C'][0].decode(
+            self._raw('C'))
+        out['Hormone_Other_Hosp']      = LONGFORM_CODE_MAPS['PREH'][0].decode(
+            self._raw('PREH'))
+        out['Hormone_This_Hosp']       = LONGFORM_CODE_MAPS['H'][0].decode(
+            self._raw('H'))
+        out['Immuno_Other_Hosp']       = LONGFORM_CODE_MAPS['PREI'][0].decode(
+            self._raw('PREI'))
+        out['Immuno_This_Hosp']        = LONGFORM_CODE_MAPS['I'][0].decode(
+            self._raw('I'))
         out['Stem_Cell_Other_Hosp'] = en(self._dec('PREB'))
         out['Stem_Cell_This_Hosp'] = en(self._dec('B'))
-        out['Targeted_Other_Hosp'] = en(self._dec('PRETAR'))
-        out['Targeted_This_Hosp']  = en(self._dec('TAR'))
-        out['Other_Treatment']     = en(self._dec('OTH'))
-        out['Palliative_Care']     = en(self._dec('PREP'))
+        out['Targeted_Other_Hosp']     = LONGFORM_CODE_MAPS['PRETAR'][0].decode(
+            self._raw('PRETAR'))
+        out['Targeted_This_Hosp']      = LONGFORM_CODE_MAPS['TAR'][0].decode(
+            self._raw('TAR'))
+        out['Other_Treatment']         = LONGFORM_CODE_MAPS['OTH'][0].decode(
+            self._raw('OTH'))
+        out['Palliative_Care']         = LONGFORM_CODE_MAPS['PREP'][0].decode(
+            self._raw('PREP'))
         out['Active_Surveillance'] = en(self._dec('WATCHWAITING'))
 
         # ── Biomarkers (SSF1-10) — cancer-type-aware ─────────────────────────
