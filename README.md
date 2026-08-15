@@ -133,8 +133,10 @@ external `cancer_registry_mapping.py` that is not part of this repo) — there
 is no code table in this package to invert for those, and `TCREncoder`
 deliberately reports them in `unencoded_columns` instead of guessing. What it
 *does* reconstruct with full fidelity is every SSF1-10 biomarker field across
-all 11 cancer profiles, since those have real decode logic (and now, real
-inverse logic) in this codebase.
+all 16 cancer profiles, plus the structural fields with a real code table
+(AJCC, surgery codes, regional-node surgery codes, EBRT, LNEXAM, LN_POSITI),
+since those have real decode logic (and now, real inverse logic) in this
+codebase.
 
 ### Comparing two files / validating round-trip fidelity
 
@@ -192,11 +194,27 @@ if a single code or combination stops round-tripping.
 > own Excel reader (now fixed: all `*_raw` / `*_decoded` columns are read as
 > text so fixed-width codes keep their leading zeros).
 
-20,172 legal codes across those fourteen groups round-trip exactly, and every
+21,158 legal codes across all sixteen groups round-trip exactly, and every
 one of them carries the code book's own Chinese definition in the validation
-workbook. Lymphoma and leukemia are the two SSF-collecting sites still
-missing: the manual keys them off the morphology code rather than the primary
-site, which needs a change to cancer-group detection — see
+workbook.
+
+Lymphoma and leukemia are keyed off the **morphology** code, not the primary
+site (Cancer-SSF-Manual pp.194, 207), so `detect_cancer_group()` takes an
+optional second argument:
+
+```python
+detect_cancer_group('C16.9')              # 'stomach'
+detect_cancer_group('C16.9', '9699/3')    # 'lymphoma' — a gastric MALT lymphoma
+detect_cancer_group('C42.2', '9835/3')    # 'lymphoma' — spleen
+detect_cancer_group('C42.1', '9835/3')    # 'leukemia' — same morphology, marrow
+```
+
+M-9811-9837 is the one range the manual splits on the site, so neither code
+can decide it alone. `TCRDecoder` passes `MCODE_raw` automatically when the
+column is present; without a morphology column those cases fall back to their
+site and a nodal lymphoma reads as `generic`.
+
+Still outstanding: the other 62 Longform fields have no code table yet — see
 [`docs/codebook_conformance_findings.md`](docs/codebook_conformance_findings.md).
 The report's `Notes` sheet says the same.
 
@@ -309,7 +327,7 @@ tests/
 ├── test_decoders.py     # Individual decoder tests (boundary, edge cases)
 ├── test_encoders.py     # Encode-direction + round-trip tests (all 11 profiles)
 ├── test_breast_codebook_conformance.py  # Exhaustive breast <-> code book conformance
-├── test_validation_dataset.py           # Field + pairwise-case validation data set (14 groups)
+├── test_validation_dataset.py           # Field + pairwise-case validation data set (16 groups)
 ├── test_pipeline.py     # End-to-end pipeline tests
 ├── test_synth.py        # Synthetic generator tests
 └── test_adversarial.py  # Adversarial / stress tests
@@ -330,7 +348,7 @@ pytest tests/ --cov=tcr_decoder --cov-report=term-missing
 pytest tests/test_adversarial.py -v
 ```
 
-**1700+ tests, all passing** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression, pipeline bug regression (Round 3), mathematical formula verification (Round 4), encode-direction round trips across all 11 cancer profiles (`test_encoders.py`), exhaustive breast code-book conformance over every legal code (`test_breast_codebook_conformance.py`)
+**1800+ tests, all passing** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression, pipeline bug regression (Round 3), mathematical formula verification (Round 4), encode-direction round trips across every cancer profile (`test_encoders.py`), exhaustive code-book conformance over all 21,158 legal codes of all sixteen groups (`test_codebook_conformance.py`), and the bidirectional validation data set (`test_validation_dataset.py`)
 
 ---
 
