@@ -296,6 +296,46 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
 }
 
 
+def _register_ssf_columns() -> int:
+    """Describe every cancer group's SSF columns, straight from the profiles.
+
+    COLUMN_REGISTRY was hand-written and only ever covered breast, so a
+    decoded lung/liver/prostate/... file produced a data dictionary with
+    blank descriptions for its ten most important columns. The SSF profiles
+    already carry the field description and the manual page it came from, and
+    code_ranges.py carries the official 編碼範圍 for the verified groups, so
+    the entries are derived rather than duplicated by hand.
+
+    Returns the number of columns registered (for tests).
+    """
+    from tcr_decoder.code_ranges import CODE_RANGES
+    from tcr_decoder.ssf_registry import _PROFILES
+
+    added = 0
+    for group, profile in _PROFILES.items():
+        if group == 'generic':
+            continue
+        ranges = CODE_RANGES.get(group, {})
+        for ssf_key, field in profile.fields.items():
+            col = field.column_name
+            number = ssf_key.replace('SSF', '')
+            # The TCR field number is worth having even for the few breast
+            # columns COLUMN_REGISTRY already describes by hand.
+            TCR_FIELD_NUMBER.setdefault(col, f'8.{number}')
+            if col in COLUMN_REGISTRY:
+                continue
+            entry = ranges.get(ssf_key)
+            source = f'{profile.site_label} {ssf_key}: {field.description}'
+            if entry:
+                source += f'（官方編碼範圍：{entry[2]}，共 {len(entry[1])} 個合法碼）'
+            COLUMN_REGISTRY[col] = (field.raw_field, 'ssf_profile', source)
+            added += 1
+    return added
+
+
+_SSF_COLUMNS_REGISTERED = _register_ssf_columns()
+
+
 def label_with_tcr_number(col: str) -> str:
     """Return column label prefixed with TCR field number if known.
 
