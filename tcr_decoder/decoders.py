@@ -11,6 +11,22 @@ import numpy as np
 from tcr_decoder.utils import strip_float_suffix, _norm
 
 
+# Codes shaped like a TCR sentinel (888, 900-902, 988, 990, 996-999) that are
+# NOT part of a given field's official code range. Letting one fall through a
+# decoder's raw passthrough would put a bare '888' into a clinical column,
+# where it reads as a measurement rather than a code; each breast decoder
+# below labels it explicitly instead. The label is machine-reversible, so the
+# encode direction still reproduces the original code exactly.
+_SENTINEL_LIKE = frozenset({
+    '888', '900', '901', '902', '988', '990', '996', '997', '998', '999',
+})
+
+
+def _unlisted_code(v: str) -> str:
+    """Label for a sentinel-shaped code outside this field's official range."""
+    return f'Unlisted code {v}' if v in _SENTINEL_LIKE else v
+
+
 # ─── ER / PR (SSF1, SSF2) ──────────────────────────────────────────
 
 def decode_er_pr(raw_series: pd.Series, receptor: str) -> pd.Series:
@@ -30,10 +46,14 @@ def decode_er_pr(raw_series: pd.Series, receptor: str) -> pd.Series:
     function's existing logic decodes them correctly by coincidence (e.g.
     'S84' -> "Strong staining, 84%", a faithful reading of Allred 3+5). See
     tests/test_encoders.py::TestEncodeErPr::test_allred_score_codes_decode_and_roundtrip
-    and fable-opinion.md (工作5) for the full analysis -- including the one
-    still-unconfirmed cell (Allred proportion score 1, <1% positive cells),
-    which needs a human to verify against the actual PDF table before any
-    special-casing is added for it.
+    for the pinned cases.
+
+    The one cell previously flagged as unconfirmed -- Allred proportion
+    score 1 (<1% positive cells) -- is settled: the manual's own table
+    (p.123, codebook_md/ssf_chunk_007) gives that row the shared code 120
+    ("陰性: ER 反應的比例<1%，不論染色強度") rather than a letter code, which
+    is exactly what the '120' entry above already decodes. No special case
+    is needed. See coding_rules/breast_coding_spec.md for the full table.
     """
     def _decode(v):
         v = _norm(v)
@@ -69,7 +89,7 @@ def decode_er_pr(raw_series: pd.Series, receptor: str) -> pd.Series:
                 return f'{receptor} Positive ({n}%)'
             if n == 0:
                 return f'{receptor} Negative (0%)'
-        return v
+        return _unlisted_code(v)
 
     return raw_series.fillna('').astype(str).apply(_decode)
 
@@ -86,8 +106,12 @@ def decode_ki67(raw_series: pd.Series) -> pd.Series:
         v = _norm(v)
         if not v:
             return ''
+        # Official code range (Cancer-SSF-Manual, breast SSF10, p.150-151):
+        # A00-A09, 000-100, 988, 998, 999. 888 is NOT part of this field's
+        # range -- it is only defined for SSF1/SSF2 (ER/PR "converted after
+        # neoadjuvant therapy") and SSF7 -- so it is deliberately absent here
+        # and falls through to the raw passthrough below.
         special = {
-            '888': 'Not applicable (conversion)',
             '988': 'Not applicable (Phyllodes/Sarcoma)',
             '998': 'Tested, percentage unknown',
             '999': 'Unknown',
@@ -108,7 +132,7 @@ def decode_ki67(raw_series: pd.Series) -> pd.Series:
                 else:
                     category = 'High'
                 return f'{n}% ({category})'
-        return v
+        return _unlisted_code(v)
 
     return raw_series.fillna('').astype(str).apply(_decode)
 
@@ -116,9 +140,16 @@ def decode_ki67(raw_series: pd.Series) -> pd.Series:
 # ─── HER2 (SSF7) ────────────────────────────────────────────────────
 
 HER2_MAP = {
-    '0':   'IHC 0 — Negative',
+    # Legacy 1-digit forms. The codebook's valid range starts at 000/004/100,
+    # and a bare 1-digit code carries no staining-percentage information, so
+    # each one is given the same text as its IHC-only 3-digit equivalent
+    # (100-103) and encode_her2() canonicalizes it to that official code.
+    # In particular '0' means "IHC 0, staining % not described" = 100, NOT
+    # 000 (which specifically asserts staining = 0%, a 114-dx-year code).
+    # p.142 note 1: an IHC 2+ with no ISH follow-up is coded 102.
+    '0':   'IHC 0 → Negative (no ISH)',
     '1':   'IHC 1+ — Negative (Low HER2)',
-    '2':   'IHC 2+ — Equivocal',
+    '2':   'IHC 2+ — Equivocal (no ISH)',
     '3':   'IHC 3+ — Positive',
     '000': 'IHC 0 — Negative',
     '004': 'IHC 0 Ultralow (0%<staining≤10%) — Negative',
@@ -186,7 +217,7 @@ def decode_her2(raw_series: pd.Series) -> pd.Series:
         v3 = v.zfill(3)
         if v3 in HER2_MAP:
             return HER2_MAP[v3]
-        return v
+        return _unlisted_code(v)
 
     return raw_series.fillna('').astype(str).apply(_decode)
 
@@ -196,27 +227,35 @@ def decode_her2(raw_series: pd.Series) -> pd.Series:
 def decode_nottingham(raw_series: pd.Series) -> pd.Series:
     """Decode SSF6 Nottingham/Bloom-Richardson score and grade.
 
-    Codebook: Cancer-SSF-Manual (breast), p.140-141
-    Codes: 030-090 (score×10), 110-130 (grade only), 988/999
+    Codebook: Cancer-SSF-Manual (breast), p.140-141.
+    Official code range: 030,040,050,060,070,080,090 (score x10),
+    110/120/130 (grade only), 988, 999. 888 is not part of this field's
+    range and is left to fall through as an unrecognized raw code.
+
+    Bare single-digit scores 3-9 are also accepted: they are not codebook
+    codes, but a spreadsheet export that dropped the leading zeros turns
+    '030' into '30' and, in some hospital extracts, into '3'. Both are
+    decoded to the same "Score N" text; encode_nottingham() always writes
+    back the official 3-digit code (030-090).
     """
     def _decode(v):
         v = _norm(v)
         if not v:
             return ''
-        special = {'888': 'Not applicable (conversion)', '988': 'Not applicable', '999': 'Unknown'}
+        special = {'988': 'Not applicable', '999': 'Unknown'}
         if v in special:
             return special[v]
         if v.isdigit():
             n = int(v)
-            # Score codes: 30-90 (÷10), or 3-9 (raw), or 13-19 (alt format)
-            if n in (3, 4, 5, 13, 14, 15, 30, 40, 50):
-                score = n if n <= 9 else (n % 10 if n < 20 else n // 10)
+            # Score codes: 30-90 (official, x10) or 3-9 (leading zeros lost)
+            if n in (3, 4, 5, 30, 40, 50):
+                score = n if n <= 9 else n // 10
                 return f'Score {score} → Grade 1 (Well differentiated)'
-            if n in (6, 7, 16, 17, 60, 70):
-                score = n if n <= 9 else (n % 10 if n < 20 else n // 10)
+            if n in (6, 7, 60, 70):
+                score = n if n <= 9 else n // 10
                 return f'Score {score} → Grade 2 (Moderately differentiated)'
-            if n in (8, 9, 18, 19, 80, 90):
-                score = n if n <= 9 else (n % 10 if n < 20 else n // 10)
+            if n in (8, 9, 80, 90):
+                score = n if n <= 9 else n // 10
                 return f'Score {score} → Grade 3 (Poorly differentiated)'
             # Grade-only codes
             if n == 110:
@@ -225,7 +264,7 @@ def decode_nottingham(raw_series: pd.Series) -> pd.Series:
                 return 'Grade 2 (Moderately differentiated)'
             if n == 130:
                 return 'Grade 3 (Poorly differentiated)'
-        return v
+        return _unlisted_code(v)
 
     return raw_series.fillna('').astype(str).apply(_decode)
 
@@ -243,8 +282,10 @@ SSF3_NEOADJ_MAP = {
     '030': 'Stable disease / Minimal response',
     '40':  'Progressive disease / No response',
     '040': 'Progressive disease / No response',
-    '888': 'Not applicable (conversion / neoadjuvant outcome not assessed)',
-    '988': 'Not applicable (no neoadjuvant therapy)',
+    # 888 is not in this field's official range (010,011,020,030,040,988,
+    # 990,999 -- Cancer-SSF-Manual breast SSF3, p.135-136); an 888 here is
+    # left untouched as an unrecognized raw code.
+    '988': 'Not applicable (no neoadjuvant therapy / no surgery)',
     '990': 'Post-treatment shrinkage, degree not specified',
     '999': 'Unknown',
 }
@@ -265,7 +306,7 @@ def decode_ssf3_neoadj(raw_series: pd.Series) -> pd.Series:
         v2 = v.zfill(3)
         if v2 in SSF3_NEOADJ_MAP:
             return SSF3_NEOADJ_MAP[v2]
-        return v
+        return _unlisted_code(v)
 
     return raw_series.fillna('').astype(str).apply(_decode)
 
@@ -321,26 +362,38 @@ def decode_sentinel(raw_series: pd.Series, kind: str) -> pd.Series:
     """Decode SSF4 (SLN examined) or SSF5 (SLN positive).
 
     kind: 'examined' or 'positive'
+
+    Codebook: Cancer-SSF-Manual (breast) p.137-139. Official range for both
+    fields: 000-089, 988, 996, 999. The two fields give code 000 different
+    meanings -- SSF4 000 = no sentinel-node surgery at all, SSF5 000 = no
+    involved node (including ITC-only involvement) -- so the decoded text is
+    per-field, not shared. 888 is not in either field's range and falls
+    through as an unrecognized raw code.
     """
     def _decode(v):
         v = _norm(v)
         if not v:
             return ''
         special = {
-            '888': 'Not applicable (conversion)',
-            '988': 'Not applicable (no SLN biopsy)',
-            '996': 'Sentinel LN biopsy performed; no lymph node tissue found or count unknown',
+            '988': ('Not applicable (no SLN surgery, post-neoadjuvant SLN, '
+                    'or unknown whether performed)'),
+            '996': ('Sentinel LN biopsy performed; count unknown or no lymph '
+                    'node tissue found in the specimen'),
             '999': 'Unknown',
         }
         if v in special:
             return special[v]
-        if v == '0':
-            return f'None {kind}' if kind == 'positive' else 'None examined'
         if v.isdigit():
             n = int(v)
+            # Compare numerically: the field is 3 characters, so the zero
+            # count arrives as '000' in a real file (and as '0' from an
+            # export that dropped the padding).
+            if n == 0:
+                return ('None positive (or ITC-only involvement)' if kind == 'positive'
+                        else 'No sentinel LN surgery performed')
             if 1 <= n <= 89:
                 return f'{n} node(s) {kind}'
-        return v
+        return _unlisted_code(v)
 
     return raw_series.fillna('').astype(str).apply(_decode)
 
@@ -348,16 +401,22 @@ def decode_sentinel(raw_series: pd.Series, kind: str) -> pd.Series:
 # ─── LN Positive ────────────────────────────────────────────────────
 
 def decode_lnpositive(raw_series: pd.Series) -> pd.Series:
-    """Decode LN_POSITI field with sentinel codes."""
+    """Decode LN_POSITI (區域淋巴結侵犯數目) with its sentinel codes.
+
+    Codebook: Longform-Manual p.130-131. Official range 00-90, 95, 97-99.
+    95, 97 and 98 are three DIFFERENT situations -- an earlier version of
+    this decoder gave 95 and 98 the same text, which both lost the
+    distinction and made 98 re-encode as 95.
+    """
     def _decode(v):
         v = _norm(v)
         if not v:
             return ''
         special = {
-            '95': 'Positive LN, count not applicable',
-            '97': 'Positive LN, count not specified',
-            '98': 'Positive LN, count not applicable',
-            '99': 'Unknown',
+            '95': 'Positive by aspiration/core biopsy only (nodes not surgically removed)',
+            '97': 'Positive LN present, count not specified',
+            '98': 'No nodes removed/examined, or no lymph node tissue found (clinical assessment only)',
+            '99': 'Unknown / not applicable / not documented',
         }
         if v in special:
             return special[v]

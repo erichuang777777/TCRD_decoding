@@ -253,20 +253,40 @@ class TCRDecoder:
                 f'Pass sheet_name=... to TCRDecoder to select a different sheet.'
             )
 
-        # Preserve PK/patient IDs as strings to avoid leading-zero loss
-        # (e.g. '0001234' becoming the integer 1234 on read-back).  All ID
-        # columns that commonly suffer from this are forced to `str` dtype.
-        _id_dtypes = {
-            col: str
-            for col in ('PK_raw', 'PK_decoded', 'PK',
-                        'IDNUM_raw', 'IDNUM_decoded', 'IDNUM')
-        }
+        # Read every code column as text. TCR codes are FIXED-WIDTH and their
+        # leading zeros carry meaning -- HER2 '000' (IHC 0, staining 0%) is a
+        # different code from the legacy 1-digit '0' (staining % not
+        # described, i.e. 100), and '004' (Ultralow) is not '4' at all. Left
+        # to pandas' type inference a column of digit strings becomes int64
+        # and every leading zero is lost before any decoder sees it. The same
+        # applies to PK/patient IDs ('0001234' -> 1234).
+        #
+        # The column names aren't known until the header is read, so read the
+        # header alone first and build the dtype map from it.
+        _text_dtypes = {}
+        try:
+            _header = pd.read_excel(
+                str(self.input_path), sheet_name=self.sheet_name,
+                engine='openpyxl', nrows=0,
+            )
+            _text_dtypes = {
+                col: str for col in _header.columns
+                if isinstance(col, str)
+                and (col.endswith('_raw') or col.endswith('_decoded')
+                     or col in ('PK', 'IDNUM'))
+            }
+        except Exception:  # pragma: no cover - fall back to inference
+            _text_dtypes = {
+                col: str
+                for col in ('PK_raw', 'PK_decoded', 'PK',
+                            'IDNUM_raw', 'IDNUM_decoded', 'IDNUM')
+            }
         try:
             self._raw_df = pd.read_excel(
                 str(self.input_path),
                 sheet_name=self.sheet_name,
                 engine='openpyxl',
-                dtype=_id_dtypes,
+                dtype=_text_dtypes,
             )
         except TypeError:
             # Fallback for engines that reject the dtype argument
@@ -540,14 +560,14 @@ class TCRDecoder:
             if col_name in _ssf_decoded.columns:
                 out[col_name] = _ssf_decoded[col_name]
 
-        # Breast-specific post-processing for SSF8/SSF9 (still use mapped decoded values)
-        if _active_group == 'breast':
-            if 'Pagets_Disease' in out.columns:
-                out['Pagets_Disease'] = en(self._dec('SSF8')).str.replace(
-                    r'^Paget\s+', '', regex=True).apply(
-                    lambda x: x[0].upper() + x[1:] if len(x) > 1 else x.upper())
-            if 'LVI_SSF' in out.columns:
-                out['LVI_SSF'] = en(self._dec('SSF9')).str.capitalize()
+        # SSF8/SSF9 for breast used to be overwritten here with cleaned-up
+        # text from the input file's own SSF8_decoded/SSF9_decoded columns.
+        # That made those two columns the only SSF fields NOT produced by the
+        # profile decoder, so they had no fixed vocabulary to invert and
+        # TCREncoder had to report them as un-encodable. The profile's
+        # _PAGET_MAP/_LVI_BREAST_MAP decode the same raw codes straight from
+        # the codebook, so the profile output is now used for all 10 SSF
+        # fields and the breast round trip is complete.
 
         # Sentinel LN: for non-breast cancers that don't use SSF4/SSF5 for sentinel LN,
         # these will already be in out under their cancer-specific column names.

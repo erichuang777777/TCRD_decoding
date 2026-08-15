@@ -94,9 +94,11 @@ class TestCodeMap:
 class TestEncodeErPr:
     @pytest.mark.parametrize('code', [0, 1, 50, 100, 110, 120, 121, 888, 988, 999])
     def test_roundtrip(self, code):
+        """SSF1/SSF2 are 3-character fields, so encode always writes the
+        official zero-padded code (1% -> '001', not '1')."""
         dec, enc = _roundtrip([code], lambda s: decode_er_pr(s, 'ER'),
                               lambda s: encode_er_pr(s, 'ER'))
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
     # Valid 3-char staining codes per the Cancer-SSF-Manual (breast SSF1,
     # p.121): intensity letter + 2-digit proportion, 100% stored as '00'.
@@ -148,7 +150,7 @@ class TestEncodeErPr:
         dec, enc = _roundtrip([70], lambda s: decode_er_pr(s, 'PR'),
                               lambda s: encode_er_pr(s, 'PR'))
         assert 'PR' in dec.iloc[0]
-        assert enc.iloc[0] == '70'
+        assert enc.iloc[0] == '070'
 
     @pytest.mark.parametrize('code,expected_label', [
         # Allred score (Cancer-SSF-Manual, breast SSF1, p.123): first digit/
@@ -174,19 +176,25 @@ class TestEncodeErPr:
         dec = decode_er_pr(pd.Series([code]), 'ER')
         assert dec.iloc[0] == expected_label
         enc = encode_er_pr(dec, 'ER')
-        # '000' round-trips to the numerically-equivalent canonical '0'
-        # (leading zeros aren't clinically meaningful here); every other
-        # code round-trips byte-identical.
-        expected_code = '0' if code == '000' else code
-        assert enc.iloc[0] == expected_code
+        # Every code round-trips byte-identical now that encode emits the
+        # official 3-character field width.
+        assert enc.iloc[0] == code
 
 
 class TestEncodeKi67:
     @pytest.mark.parametrize('code', [0, 1, 13, 14, 30, 31, 100, 888, 988, 998, 999,
                                       'A00', 'A05', 'A55', 'A99'])
     def test_roundtrip(self, code):
+        """SSF10 is a 3-character field, so a percentage encodes zero-padded
+        ('025'). 888 is not in this field's official range (A00-A09,
+        000-100, 988, 998, 999), so it decodes to the explicit
+        'Unlisted code 888' marker and still recovers exactly."""
         dec, enc = _roundtrip([code], decode_ki67, encode_ki67)
-        assert enc.iloc[0] == str(code)
+        expected = str(code).zfill(3) if str(code).isdigit() else str(code)
+        assert enc.iloc[0] == expected
+
+    def test_888_is_not_in_this_fields_range(self):
+        assert decode_ki67(pd.Series(['888'])).iloc[0] == 'Unlisted code 888'
 
 
 class TestEncodeHER2:
@@ -199,27 +207,41 @@ class TestEncodeHER2:
         dec, enc = _roundtrip([code], decode_her2, encode_her2)
         assert enc.iloc[0] == code
 
-    def test_short_code_canonicalizes_to_3digit(self):
-        """'0' and '000' both decode to 'IHC 0 — Negative'; encode always
-        returns the canonical 3-digit form."""
-        dec, enc = _roundtrip(['0'], decode_her2, encode_her2)
-        assert enc.iloc[0] == '000'
+    @pytest.mark.parametrize('legacy,official', [
+        ('0', '100'), ('1', '101'), ('2', '102'), ('3', '103')])
+    def test_short_code_canonicalizes_to_official_3digit(self, legacy, official):
+        """The codebook's valid range starts at 000/004/100; a bare 1-digit
+        code carries no staining-percentage information, so it maps to the
+        IHC-only 3-digit code (100-103). '0' must NOT become '000', which
+        specifically asserts staining = 0%."""
+        dec, enc = _roundtrip([legacy], decode_her2, encode_her2)
+        assert enc.iloc[0] == official
 
 
 class TestEncodeNottingham:
-    @pytest.mark.parametrize('code', [3, 4, 5, 6, 7, 8, 9, 110, 120, 130, 888, 988, 999])
-    def test_roundtrip(self, code):
+    @pytest.mark.parametrize('code,expected', [
+        # A bare score is not a codebook code: the official range is
+        # 030-090 (score x10), 110/120/130, 988, 999 (p.140-141), so encode
+        # must emit the official code or the submission would be rejected.
+        (3, '030'), (4, '040'), (5, '050'), (6, '060'), (7, '070'),
+        (8, '080'), (9, '090'),
+        (30, '030'), (60, '060'), (90, '090'),
+        (110, '110'), (120, '120'), (130, '130'),
+        (988, '988'), (999, '999'),
+        (888, '888'),   # not in this field's range -> 'Unlisted code 888'
+    ])
+    def test_roundtrip(self, code, expected):
         dec, enc = _roundtrip([code], decode_nottingham, encode_nottingham)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == expected
 
-    @pytest.mark.parametrize('code,canonical_score', [(30, '3'), (60, '6'), (90, '9')])
-    def test_tens_format_canonicalizes_to_bare_score(self, code, canonical_score):
-        """Codes '30' and '3' both decode to the identical 'Score 3 -> ...'
-        text (per the ORIGINAL decode_nottingham logic) -- a documented,
-        pre-existing ambiguity in the codebook, not introduced by encoding.
-        encode() canonicalizes to the bare score per breast_coding_spec.md."""
+    @pytest.mark.parametrize('code', [3, 30, '030'])
+    def test_all_score_spellings_canonicalize_to_official_code(self, code):
+        """'3', '30' and '030' all decode to the same 'Score 3 -> ...' text
+        (the first two are what a spreadsheet export that dropped leading
+        zeros produces); encode always writes back the official '030'."""
         dec, enc = _roundtrip([code], decode_nottingham, encode_nottingham)
-        assert enc.iloc[0] == canonical_score
+        assert dec.iloc[0] == 'Score 3 → Grade 1 (Well differentiated)'
+        assert enc.iloc[0] == '030'
 
 
 class TestEncodeSSF3Neoadj:
@@ -233,28 +255,42 @@ class TestEncodeSentinel:
     @pytest.mark.parametrize('code', [0, 1, 5, 89, 888, 988, 996, 999])
     @pytest.mark.parametrize('kind', ['examined', 'positive'])
     def test_roundtrip(self, code, kind):
+        """3-character field (000-089, 988, 996, 999): counts encode
+        zero-padded; 888 is outside the range and recovers via the
+        'Unlisted code' marker."""
         dec, enc = _roundtrip(
             [code], lambda s: decode_sentinel(s, kind=kind), lambda s: encode_sentinel(s, kind=kind))
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
+
+    def test_code_000_means_different_things_per_field(self):
+        """Codebook p.137/138: SSF4 000 = no sentinel-node surgery at all,
+        SSF5 000 = no involved node (ITC-only counts as none). The two must
+        not share one label."""
+        examined = decode_sentinel(pd.Series(['000']), kind='examined').iloc[0]
+        positive = decode_sentinel(pd.Series(['000']), kind='positive').iloc[0]
+        assert examined != positive
+        assert encode_sentinel(pd.Series([examined]), kind='examined').iloc[0] == '000'
+        assert encode_sentinel(pd.Series([positive]), kind='positive').iloc[0] == '000'
 
 
 class TestEncodeLNPositive:
-    @pytest.mark.parametrize('code', [0, 1, 5, 95, 97, 99])
+    @pytest.mark.parametrize('code', [0, 1, 5, 95, 97, 98, 99])
     def test_roundtrip(self, code):
+        """LN_POSITI is a 2-character field (00-90, 95, 97-99)."""
         dec, enc = _roundtrip([code], decode_lnpositive, encode_lnpositive)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(2)
 
-    def test_98_collides_with_95_known_not_a_bug(self):
-        """decode_lnpositive's own special dict maps both '95' and '98' to
-        the identical text 'Positive LN, count not applicable' -- the same
-        kind of codebook-level label collision as KNOWN_LABEL_COLLISIONS
-        elsewhere (found during code review; documented here instead of
-        silently surfacing as an unexplained compare_roundtrip mismatch).
-        encode_lnpositive canonicalizes to '95' (first-listed)."""
-        label_95 = decode_lnpositive(pd.Series(['95'])).iloc[0]
-        label_98 = decode_lnpositive(pd.Series(['98'])).iloc[0]
-        assert label_95 == label_98
-        assert encode_lnpositive(pd.Series([label_98])).iloc[0] == '95'
+    def test_95_97_98_are_three_distinct_situations(self):
+        """Longform-Manual p.130-131: 95 = positive by aspiration/core
+        biopsy with no surgical removal, 97 = positive nodes present but
+        count unknown, 98 = no nodes removed/examined (or no lymph node
+        tissue found in the specimen). An earlier version decoded 95 and 98
+        to identical text, which both lost the distinction and silently
+        re-encoded 98 as 95."""
+        labels = {c: decode_lnpositive(pd.Series([c])).iloc[0] for c in ('95', '97', '98')}
+        assert len(set(labels.values())) == 3
+        for code, label in labels.items():
+            assert encode_lnpositive(pd.Series([label])).iloc[0] == code
 
 
 class TestEncodeEBRT:
@@ -278,7 +314,7 @@ class TestEncodeLungFields:
     @pytest.mark.parametrize('code', [0, 1, 4, 8, 988, 999])
     def test_ssf5_mediastinal_roundtrip(self, code):
         dec, enc = _roundtrip([code], _decode_lung_ssf5_mediastinal, encode_lung_ssf5_mediastinal)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
     @pytest.mark.parametrize('code', ['XXX', 'AXX', 'ABX', 'ADX', 'AEX', '999', ''])
     def test_egfr_roundtrip(self, code):
@@ -296,14 +332,14 @@ class TestEncodeLungFields:
     @pytest.mark.parametrize('code', [2, 10, 20, 21, 988, 999])
     def test_ssf9_nodules_roundtrip(self, code):
         dec, enc = _roundtrip([code], _decode_lung_ssf9_nodules, encode_lung_ssf9_nodules)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
 
 class TestEncodeColorectumFields:
     @pytest.mark.parametrize('code', [1, 2, 500, 986, 987, 988, 999])
     def test_cea_lab_value_roundtrip(self, code):
         dec, enc = _roundtrip([code], _decode_cea_lab_value, encode_cea_lab_value)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
     @pytest.mark.parametrize('code', ['008', '118', '228', '338', '988', '998'])
     def test_ras_mutation_roundtrip(self, code):
@@ -329,7 +365,7 @@ class TestEncodeLiverFields:
     @pytest.mark.parametrize('code', ['A00', 'A01', 'A05', 'A99', 0, 5, 10, 50, 987, 991, 992, 993, 988, 999])
     def test_afp_roundtrip(self, code):
         dec, enc = _roundtrip([code], _decode_liver_afp, encode_liver_afp)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
     def test_a00_means_under_1_not_zero(self):
         """Per Cancer-SSF-Manual (liver SSF1, p.81): an actual AFP value of
@@ -347,27 +383,28 @@ class TestEncodeLiverFields:
             lambda s: _decode_lab_value_10x(s, 'Creatinine', 'mg/dL'),
             lambda s: encode_lab_value_10x(s, 'Creatinine', 'mg/dL'),
         )
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
     @pytest.mark.parametrize('code', [1, 10, 60, 988, 997, 999])
     def test_inr_roundtrip(self, code):
         dec, enc = _roundtrip([code], _decode_liver_inr, encode_liver_inr)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
 
 class TestEncodePSA:
     @pytest.mark.parametrize('code', [
-        0, 1, 45, 500, 979, 980, 981, 982, 983, 984, 985, 986, 987,
+        1, 45, 500, 979, 980, 981, 982, 983, 984, 985, 986, 987,
         989, 990, 991, 992, 993, 994, 995, 996, 997, 998, 988, 999,
     ])
     def test_roundtrip(self, code):
         """Covers the full PSA code table (Cancer-SSF-Manual, prostate SSF1,
-        p.177-178), including the high-value tiers (981-998, PSA >=98 ng/mL)
+        p.183-184), including the high-value tiers (981-998, PSA >=98 ng/mL)
         that the decoder originally didn't handle at all -- those values are
         common in advanced/metastatic prostate cancer and were previously
-        falling through to a meaningless 'Code 991'-style fallback."""
+        falling through to a meaningless 'Code 991'-style fallback. The
+        field is 3 characters, so encode emits the zero-padded code."""
         dec, enc = _roundtrip([code], _decode_psa, encode_psa)
-        assert enc.iloc[0] == str(code)
+        assert enc.iloc[0] == str(code).zfill(3)
 
     def test_high_value_tiers_are_clinically_meaningful_not_raw_fallback(self):
         for code in (981, 991, 998):
@@ -425,16 +462,22 @@ class TestEncodeStructuralFields:
 # group -- chosen to hit a real (non-sentinel-only) value per profile so the
 # round trip actually exercises each field's real decoder, not just 988/999.
 SSF_SAMPLES = {
-    'breast':      ['70', '0', '010', '5', '2', '7', '531', '0', '10', '25'],
-    'lung':        ['10', '10', '2', '13', '3', 'AXX', '10', '5', '10', '988'],
-    'colorectum':  ['50', '10', '988', '988', '988', '118', '988', '988', '988', '20'],
-    'liver':       ['A05', '3', '105', '50', '300', '15', '10', '20', '988', '988'],
-    'cervix':      ['5', '10', '988', '988', '988', '988', '988', '988', '988', '988'],
-    'stomach':     ['50', '10', '1', '988', '10', '988', '988', '988', '988', '988'],
-    'thyroid':     ['1', '988', '2', '988', '988', '988', '988', '988', '988', '988'],
-    'prostate':    ['45', '7', '988', '988', '988', '988', '988', '988', '988', '988'],
-    'nasopharynx': ['5', '5', '988', '988', '988', '988', '988', '988', '988', '988'],
-    'endometrium': ['988', '988', '988', '988', '988', '988', '1', '988', '988', '988'],
+    # Official, codebook-valid codes at their declared 3-character width.
+    'breast':      ['070', '000', '010', '005', '002', '070', '531', '000', '010', '025'],
+    'lung':        ['010', '010', '002', '013', '003', 'AXX', '010', '005', '010', '988'],
+    'colorectum':  ['050', '010', '020', '030', '001', '118', '010', '010', '030', '020'],
+    'liver':       ['A05', '003', '105', '050', '300', '015', '010', '020', '988', '988'],
+    'cervix':      ['005', '010', '988', '988', '988', '988', '988', '988', '988', '988'],
+    'stomach':     ['050', '010', '001', '030', '010', '988', '988', '988', '988', '988'],
+    # Thyroid collects no SSFs at all (manual p.1) -- every field is 988.
+    'thyroid':     ['988'] * 10,
+    'prostate':    ['045', '034', '007', '043', '007', '012', '003', '030', '988', '988'],
+    'head_neck':   ['015', '005', '110', '000', '000', '000', '030', '025', '110', '115'],
+    'endometrium': ['070', '050', '002', '020', '020', '010', '988', '988', '988', '988'],
+    'esophagus':   ['020', '010', '002', '020', '988', '988', '988', '988', '988', '988'],
+    'pancreas':    ['045', '010', '350', '014', '120', '158', '988', '988', '988', '988'],
+    'ovary':       ['350', '045', '010', '988', '988', '988', '988', '988', '988', '988'],
+    'bladder':     ['020', '010', '010', '988', '988', '988', '988', '988', '988', '988'],
     'generic':     ['5', '5', '5', '5', '5', '5', '5', '5', '5', '5'],
 }
 
@@ -462,9 +505,9 @@ def test_all_supported_cancer_groups_covered_by_samples():
 
 KNOWN_LABEL_COLLISIONS = [
     # (cancer_group, ssf_key, code_a, code_b) -- both decode to the same text.
-    ('colorectum', 'SSF2', '888', '988'),
-    ('stomach', 'SSF2', '888', '988'),
-    ('cervix', 'SSF2', '888', '988'),
+    # The 888-vs-988 collisions that used to exist in colorectum/stomach/
+    # cervix SSF2 are gone: those fields no longer inherit the generic
+    # sentinel block, so 888 is not a legal code for them at all.
     ('breast', 'SSF6', '60', '6'),
 ]
 
@@ -498,11 +541,17 @@ class TestTCREncoder:
         assert 'SSF1_raw' in raw.columns
         assert len(raw) == len(breast_clean_df)
 
-    def test_breast_pipeline_override_columns_are_flagged_not_crashed(self, breast_clean_df):
+    def test_breast_ssf8_ssf9_now_round_trip(self, breast_clean_df):
+        """TCRDecoder.decode() used to overwrite Pagets_Disease/LVI_SSF with
+        text from the input file's own SSF8_decoded/SSF9_decoded columns,
+        which left them the only two breast SSF fields TCREncoder could not
+        invert. They now come from the profile decoder like every other SSF
+        field, so all ten breast SSF fields encode."""
         enc = TCREncoder(breast_clean_df)
-        enc.encode(on_error='raise')
-        assert 'Pagets_Disease' in enc.unencoded_columns
-        assert 'LVI_SSF' in enc.unencoded_columns
+        raw = enc.encode(on_error='raise')
+        assert 'Pagets_Disease' not in enc.unencoded_columns
+        assert 'LVI_SSF' not in enc.unencoded_columns
+        assert {'SSF8_raw', 'SSF9_raw'} <= set(raw.columns)
 
     def test_lung_generic_performance_status_has_no_codetable(self, lung_clean_df):
         """'Performance_Status' (generic KPSECOG, all cancer types) is decoded
@@ -541,18 +590,29 @@ class TestTCREncoder:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCompareRoundtrip:
-    def test_breast_mismatches_are_only_known_nottingham_collision(self, breast_raw_df, tmp_path):
+    def test_breast_roundtrip_is_lossless(self, breast_raw_df, tmp_path):
+        """A breast file made of codebook-legal codes must survive
+        decode -> encode with ZERO mismatches. Breast is the one cancer
+        group whose profile has been verified field-by-field against the
+        printed manual (see tcr_decoder/code_ranges.py), so nothing here is
+        allowed to be explained away as a known collision."""
         xlsx = tmp_path / 'breast.xlsx'
         with pd.ExcelWriter(str(xlsx), engine='openpyxl') as w:
             breast_raw_df.to_excel(w, sheet_name='All_Fields_Decoded', index=False)
         mismatches = compare_roundtrip(str(xlsx))
-        if len(mismatches):
-            assert set(mismatches['Field'].unique()) <= {'SSF6_raw'}
-            # every mismatch must be a tens-vs-ones-digit rendering of the
-            # SAME score (e.g. '60' vs '6'), never an unrelated value
-            for _, row in mismatches.iterrows():
-                orig, rt = row['Original_Code'], row['Roundtrip_Code']
-                assert orig.rstrip('0') == rt or orig == rt + '0'
+        assert len(mismatches) == 0, mismatches.head(10).to_string()
+
+    def test_breast_synthetic_codes_are_all_codebook_legal(self, breast_raw_df):
+        """The generator must not produce codes the registry would reject --
+        otherwise the round-trip tests above only exercise the decoders'
+        leniency paths."""
+        from tcr_decoder.code_ranges import is_legal_code
+        illegal = {
+            f'SSF{i}': sorted({v for v in breast_raw_df[f'SSF{i}_raw'].astype(str)
+                               if not is_legal_code('breast', f'SSF{i}', v)})
+            for i in range(1, 11)
+        }
+        assert not any(illegal.values()), {k: v for k, v in illegal.items() if v}
 
     def test_colorectum_mismatches_are_only_known_888_988_collision(
             self, colorectum_raw_df, tmp_path):

@@ -68,28 +68,14 @@ STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'LN_Positive':                ('LN_POSITI', encode_lnpositive),
 }
 
-# (cancer_group, clean_column) pairs where TCRDecoder.decode()'s full
-# pipeline OVERWRITES the SSF-profile decoder's output with its own
-# post-processing that trusts the input file's pre-existing {FIELD}_decoded
-# column (see core.py: the breast Pagets_Disease/LVI_SSF block). The
-# profile's decoder/encoder pair is internally consistent when used directly
-# via apply_ssf_profile()/apply_ssf_encode_profile(), but a `clean` DataFrame
-# coming out of the FULL TCRDecoder pipeline holds that other, unstructured
-# text instead -- there is no fixed vocabulary to invert, so TCREncoder
-# reports these as unencoded rather than attempting (and failing) to parse
-# them as if they were normal SSF-profile output.
-_SSF_PIPELINE_OVERRIDDEN = {
-    ('breast', 'Pagets_Disease'): (
-        "TCRDecoder.decode() overwrites this column with cleaned-up text "
-        "from the input file's own SSF8_decoded column, not the SSF profile's "
-        "decoder -- there is no fixed code table to invert here."
-    ),
-    ('breast', 'LVI_SSF'): (
-        "TCRDecoder.decode() overwrites this column with cleaned-up text "
-        "from the input file's own SSF9_decoded column, not the SSF profile's "
-        "decoder -- there is no fixed code table to invert here."
-    ),
-}
+# (cancer_group, clean_column) pairs whose value in a `clean` DataFrame does
+# NOT come from the SSF profile decoder, and therefore has no fixed
+# vocabulary for TCREncoder to invert. Kept as an extension point: breast
+# SSF8/SSF9 used to be listed here because TCRDecoder.decode() overwrote
+# them with text from the input file's own {FIELD}_decoded columns; they now
+# come from the profile like every other SSF field, so this is empty and all
+# ten breast SSF fields round-trip.
+_SSF_PIPELINE_OVERRIDDEN: Dict[Tuple[str, str], str] = {}
 
 
 class TCREncoder:

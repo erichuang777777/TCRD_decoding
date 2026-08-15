@@ -36,12 +36,20 @@ from tcr_decoder.utils import strip_float_suffix
 # per-field knowledge this module shouldn't need); they simply show up
 # as expected, low-volume, non-clinically-meaningful mismatches.
 KNOWN_LABEL_COLLISION_NOTE = (
-    'A handful of TCR codes decode to identical text (e.g. 888 vs 988 both '
-    '"Not applicable" for several SSF fields, or a Nottingham score entered '
-    'as "60" vs "6"). Re-encoding such a label returns the canonical code, '
-    'which may differ from the ORIGINAL code even though the clinical '
-    'meaning is unchanged. These show up here as mismatches; they are a '
-    'property of the TCR codebook, not a decoding error.'
+    'BREAST files should report ZERO mismatches: every breast SSF field has '
+    'been verified against the printed code book field by field (see '
+    'tcr_decoder/code_ranges.py and docs/codebook_conformance_findings.md), '
+    'and its decode is injective over the official code range. A mismatch on '
+    'a breast field means the ORIGINAL file holds a code outside that range '
+    '-- e.g. a Nottingham score stored as "6" when the code book only '
+    'defines 030-090 -- and the Roundtrip_Code column shows the code the '
+    'registry would actually accept. '
+    'For the OTHER cancer groups, some mismatches are still expected: '
+    'several SSF fields there inherit a generic sentinel block, so 888 and '
+    '988 decode to the identical text "Not applicable" and re-encode to the '
+    'canonical 888 even though the original code was 988. Those are listed '
+    'in docs/codebook_conformance_findings.md section B4 and are not fixed '
+    'yet.'
 )
 
 
