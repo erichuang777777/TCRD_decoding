@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import itertools
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 
@@ -1806,6 +1806,34 @@ def pairwise_coverage(cases: pd.DataFrame,
 # 3. Whole-case round trip through the real pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Head & neck is the one group whose site-level SSF applicability the
+# validation dataset must respect: which of SSF1-10 a sub-site records
+# varies (Cancer-SSF-Manual pp.3-11), and build_case_combinations() draws
+# from the UNION of every sub-site's legal codes for every SSF key (it has
+# no per-row site to condition on). Left unadjusted, a synthesised lip-cancer
+# row (which the manual says records only SSF1/SSF7/SSF9/SSF10) would get a
+# real, non-988 value injected into SSF3-6 too -- a combination no real
+# registry row for that sub-site could ever contain, even though it still
+# round-trips fine (decode/encode do not know or enforce site applicability
+# on their own). Keyed on the exact TCODE1 values _HeadNeckFields.
+# TCODE1_CHOICES can generate; not a general sub-site table for every code in
+# the manual.
+_HN_APPLICABLE_SSF: Dict[str, FrozenSet[str]] = {
+    # SSF1, SSF7 (tumour depth), SSF9, SSF10 -- lip, most oral cavity subsites.
+    'C02.1': frozenset({'SSF1', 'SSF7', 'SSF9', 'SSF10'}),   # tongue border
+    'C04.0': frozenset({'SSF1', 'SSF7', 'SSF9', 'SSF10'}),   # floor of mouth
+    'C06.0': frozenset({'SSF1', 'SSF7', 'SSF9', 'SSF10'}),   # cheek mucosa
+    'C00.9': frozenset({'SSF1', 'SSF7', 'SSF9', 'SSF10'}),   # lip, NOS
+    # SSF1, SSF9, SSF10 only -- pharynx, larynx, salivary glands.
+    'C09.9': frozenset({'SSF1', 'SSF9', 'SSF10'}),           # tonsil, NOS
+    'C10.9': frozenset({'SSF1', 'SSF9', 'SSF10'}),           # oropharynx, NOS
+    'C11.9': frozenset({'SSF1', 'SSF9', 'SSF10'}),           # nasopharynx, NOS
+    'C13.9': frozenset({'SSF1', 'SSF9', 'SSF10'}),           # hypopharynx, NOS
+    'C32.0': frozenset({'SSF1', 'SSF9', 'SSF10'}),           # glottic larynx
+    'C07.9': frozenset({'SSF1', 'SSF9', 'SSF10'}),           # parotid gland
+}
+
+
 def build_case_dataset(cases: Optional[pd.DataFrame] = None,
                        seed: int = 20260814,
                        cancer_group: str = 'breast') -> pd.DataFrame:
@@ -1829,6 +1857,14 @@ def build_case_dataset(cases: Optional[pd.DataFrame] = None,
             # codes we just substituted; blank it so nothing downstream can
             # silently trust it instead of the code table.
             raw[decoded_col] = ''
+    if cancer_group == 'head_neck' and 'TCODE1_raw' in raw.columns:
+        for idx, tcode1 in raw['TCODE1_raw'].items():
+            applicable = _HN_APPLICABLE_SSF.get(str(tcode1))
+            if applicable is None:
+                continue
+            for ssf_key in SSF_KEYS:
+                if ssf_key not in applicable:
+                    raw.loc[idx, f'{ssf_key}_raw'] = '988'
     raw.insert(0, 'Case_ID', cases['Case_ID'].values)
     return raw
 

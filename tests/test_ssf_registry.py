@@ -94,6 +94,31 @@ class TestMorphologyKeyedGroups:
     def test_a_solid_tumour_morphology_leaves_the_site_in_charge(self):
         assert detect_cancer_group('C50.1', '8500/3') == 'breast'
 
+    @pytest.mark.parametrize('site,morphology,expected', [
+        # Mucosal melanoma of the head and neck (manual p.5/11): a specific
+        # sinonasal site list AND one of nine melanoma morphologies, both
+        # required. Regression: 'C30'/'C31' used to be registered as whole
+        # 3-character site prefixes, so C30.1 (middle ear) and C31.2-C31.9
+        # (other sinus subsites) -- which have no SSF table at all -- and
+        # C30.0/C31.0-C31.1 with a NON-melanoma histology all routed into
+        # head_neck anyway, decoding them with the wrong clinical meaning.
+        ('C30.0', '8720/3', 'head_neck'),   # qualifying site + morphology
+        ('C31.0', '8770/3', 'head_neck'),
+        ('C31.1', '8730/3', 'head_neck'),
+        ('C30.0', '8140/3', 'generic'),     # qualifying site, wrong histology
+        ('C30.1', '8720/3', 'generic'),     # melanoma, but middle ear
+        ('C31.2', '8720/3', 'generic'),     # melanoma, but wrong sinus subsite
+        ('C30.0', None, 'generic'),         # no morphology to gate on at all
+    ])
+    def test_mucosal_melanoma_of_head_and_neck_needs_site_and_morphology(
+            self, site, morphology, expected):
+        assert detect_cancer_group(site, morphology) == expected
+
+    def test_larynx_is_head_neck_by_site_alone_no_morphology_gate(self):
+        """Unlike C30/C31, C32 (larynx) subsites need only the site (p.10)."""
+        assert detect_cancer_group('C32.0') == 'head_neck'
+        assert detect_cancer_group('C32.0', '8140/3') == 'head_neck'
+
     def test_site_alone_cannot_reach_the_haematolymphoid_profiles(self):
         """Without MCODE there is nothing to route on -- and we say so."""
         assert detect_cancer_group('C77.9') == 'generic'
