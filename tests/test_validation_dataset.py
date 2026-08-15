@@ -147,6 +147,45 @@ class TestCaseLevel:
             assert len(blank) == 0, f'{group}.{ssf_col}: {len(blank)} blank'
 
 
+class TestHeadNeckSubsiteApplicability:
+    """Regression (code review): build_case_combinations() draws SSF values
+    from the UNION of every head_neck sub-site's legal codes, since it has
+    no per-row site to condition on. Left unadjusted, build_case_dataset()
+    injected a real, non-988 value into fields a sub-site does not collect
+    at all (e.g. SSF3-6 for a lip-cancer row, which the manual limits to
+    SSF1/SSF7/SSF9/SSF10) -- a combination no real registry row for that
+    sub-site could contain, even though it still "round-trips" fine, since
+    decode/encode do not enforce site applicability on their own."""
+
+    def test_inapplicable_ssf_fields_are_forced_to_not_applicable(self):
+        from tcr_decoder.validation import _HN_APPLICABLE_SSF, SSF_KEYS
+
+        raw = build_case_dataset(cancer_group='head_neck')
+        assert 'TCODE1_raw' in raw.columns
+        checked_any = False
+        for _, row in raw.iterrows():
+            applicable = _HN_APPLICABLE_SSF.get(str(row['TCODE1_raw']))
+            if applicable is None:
+                continue
+            checked_any = True
+            for ssf_key in SSF_KEYS:
+                if ssf_key not in applicable:
+                    assert row[f'{ssf_key}_raw'] == '988', (
+                        f"{row['TCODE1_raw']} {ssf_key} = "
+                        f"{row[f'{ssf_key}_raw']!r}, expected 988")
+        assert checked_any, 'no row matched a known head_neck TCODE1 choice'
+
+    def test_lip_cancer_never_gets_a_nodal_level_value(self):
+        """Lip (SSF1/SSF7/SSF9/SSF10 only) must never carry a real SSF3-6
+        nodal-level value -- those fields describe cervical node regions
+        the manual does not ask lip cases to report at all."""
+        raw = build_case_dataset(cancer_group='head_neck')
+        lip = raw[raw['TCODE1_raw'] == 'C00.9']
+        assert len(lip) > 0
+        for ssf_key in ('SSF3', 'SSF4', 'SSF5', 'SSF6'):
+            assert set(lip[f'{ssf_key}_raw']) == {'988'}
+
+
 class TestLeadingZeroIntegrity:
     def test_her2_000_survives_an_excel_round_trip(self, tmp_path):
         """Regression: pandas inferred a column of digit strings as int64, so
