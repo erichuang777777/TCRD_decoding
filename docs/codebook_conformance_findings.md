@@ -177,7 +177,32 @@ detect_cancer_group('C42.1', '9835/3')  # 'leukemia'（同一形態碼、骨髓�
 `00` 是「僅於申報醫院執行」、`09` 是「僅於外院執行」，`01`-`08` 是八種
 未執行的不同原因。已修正合成資料產生器改輸出合法碼。
 
-`code_ranges.py` 的 `LONGFORM` 現有 27 個欄位、756 個代碼，由
+### 新增：人口學與追蹤結果七欄
+
+`SEX`、`CLASS95`（個案分類）、`CLASSOFDIAG`（診斷狀態分類）、
+`CLASSOFTREAT`（治療狀態分類）、`VSTA`（生存狀態）、`RETYPE95`（首次復發
+型式）、`KPSECOG`（首次治療前生活功能狀態評估）。
+
+**`KPSECOG`（#7.6）是複合碼**，手冊自己講得很明白（p.337）：第 1-2 碼是
+KPS 十分位（`00`／`10`／`20`…`100`），第 3 碼是 ECOG（`0`-`5`）。只記錄
+ECOG 時前兩碼填 `00`——照這個規則，`000`-`004` 不會跟真正的「KPS=0」組合
+碰撞，因為 KPS=0 在手冊定義裡只會跟 ECOG=5 搭配（兩者都代表「未治療即
+死亡」，也就是碼 `005`）。這個欄位過程中發現一個既有 bug：肺癌 SSF3 剛好
+也叫 `Performance_Status`，會蓋掉這個通用欄位；已改成 `Performance_Status
+_SSF3` 分開存放（`tests/test_encoders.py` 已有測試鎖定）。
+
+**過程中發現的欄位序號問題**（見上方「新增：長表結構欄位」小節的 RMOD
+負數 bug 之後）：交叉比對時發現 `Vital_Status`（raw `VSTA`，生存狀態）
+一直誤植為 `#5.1`——那其實是「首次復發或癌症狀態追蹤日期」，一個日期
+欄位，而且已經被 `Recurrence_Date` 正確佔用，形成衝突。正確應為 `#5.4`。
+但 `#5.4` 又被前一批修正誤配給了 `Cancer_Status`（語意不符）。已改正
+`Vital_Status` 為 `#5.4`；`Cancer_Status`、`Vital_Status_Extended`、
+`Last_Contact_Extended`、`Total_Primaries` 因找不到明確對應的官方欄位
+（「延伸追蹤」VSTA6/LCD6 疑似是獨立一輪追蹤資料、手冊未給獨立序號區塊）
+移入 `UNVERIFIED_FIELD_NUMBERS`。另發現 `Path_Stage` 與 `Combined_Stage`
+都宣稱 `#3.13`，尚未處理，留給日後的分期批次。
+
+`code_ranges.py` 的 `LONGFORM` 現有 34 個欄位、850 個代碼，由
 `test_codebook_conformance.py` 以與 SSF 相同的方式（全碼域、單射、逐字還原、寬度）
 自動驗證。
 

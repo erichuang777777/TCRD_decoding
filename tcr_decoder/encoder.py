@@ -92,6 +92,13 @@ STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'RT_Seq_Surgery':            ('SEQRS',      LONGFORM_CODE_MAPS['SEQRS'][0].encode),
     'RT_vs_Systemic_Seq':        ('SEQLS',      LONGFORM_CODE_MAPS['SEQLS'][0].encode),
     'Minimally_Invasive':        ('MINS',       LONGFORM_CODE_MAPS['MINS'][0].encode),
+    'Sex':                       ('SEX',            LONGFORM_CODE_MAPS['SEX'][0].encode),
+    'Class_of_Case':             ('CLASS95',        LONGFORM_CODE_MAPS['CLASS95'][0].encode),
+    'Diag_at_Hosp':              ('CLASSOFDIAG',    LONGFORM_CODE_MAPS['CLASSOFDIAG'][0].encode),
+    'Treat_at_Hosp':             ('CLASSOFTREAT',   LONGFORM_CODE_MAPS['CLASSOFTREAT'][0].encode),
+    'Vital_Status':              ('VSTA',           LONGFORM_CODE_MAPS['VSTA'][0].encode),
+    'Recurrence_Type':           ('RETYPE95',       LONGFORM_CODE_MAPS['RETYPE95'][0].encode),
+    'Performance_Status':        ('KPSECOG',        LONGFORM_CODE_MAPS['KPSECOG'][0].encode),
 }
 
 # (cancer_group, clean_column) pairs whose value in a `clean` DataFrame does

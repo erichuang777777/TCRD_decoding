@@ -365,7 +365,8 @@ class TCRDecoder:
 
         # ── Demographics ──────────────────────────────────
         out['Patient_ID']          = self._raw('PK')
-        out['Sex']                 = en(self._dec('SEX'))
+        out['Sex']                     = LONGFORM_CODE_MAPS['SEX'][0].decode(
+            self._raw('SEX'))
         out['Age_at_Diagnosis']    = clean_numeric(self._raw('AGE'), unknown_vals={'999', '9999'})
         out['Diagnosis_Year']      = self._raw('DX_YEAR')
         out['Date_of_Diagnosis']   = clean_date(self._raw('DXDATE'))
@@ -580,11 +581,13 @@ class TCRDecoder:
         # For breast, overwrite with the specific sentinel decoder (already applied via profile).
 
         # ── Outcomes ──────────────────────────────────────
-        out['Vital_Status']         = en(self._dec('VSTA'))
+        out['Vital_Status']            = LONGFORM_CODE_MAPS['VSTA'][0].decode(
+            self._raw('VSTA'))
         out['Cancer_Status']        = en(self._dec('CSTA'))
         out['Last_Contact_Date']    = clean_date(self._raw('LCD'))
         out['Recurrence_Date']      = clean_date(self._raw('REDATE'))
-        out['Recurrence_Type']      = en(self._dec('RETYPE95'))
+        out['Recurrence_Type']         = LONGFORM_CODE_MAPS['RETYPE95'][0].decode(
+            self._raw('RETYPE95'))
         out['Cause_of_Death']       = self._decode_cod(self._dec('DIECAUSE'), out['Vital_Status'])
         out['Vital_Status_Extended'] = en(self._dec('VSTA6'))
         out['Last_Contact_Extended'] = clean_date(self._raw('LCD6'))
@@ -609,10 +612,14 @@ class TCRDecoder:
         # ── Misc ──────────────────────────────────────────
         out['Height_cm']           = clean_numeric(self._raw('HEIGHT'), unknown_vals={'999', '9999'})
         out['Weight_kg']           = clean_numeric(self._raw('WEIGHT'), unknown_vals={'999', '9999'})
-        out['Performance_Status']  = en(self._dec('KPSECOG'))
-        out['Class_of_Case']       = en(self._dec('CLASS95'))
-        out['Diag_at_Hosp']        = en(self._dec('CLASSOFDIAG'))
-        out['Treat_at_Hosp']       = en(self._dec('CLASSOFTREAT'))
+        out['Performance_Status']      = LONGFORM_CODE_MAPS['KPSECOG'][0].decode(
+            self._raw('KPSECOG'))
+        out['Class_of_Case']           = LONGFORM_CODE_MAPS['CLASS95'][0].decode(
+            self._raw('CLASS95'))
+        out['Diag_at_Hosp']            = LONGFORM_CODE_MAPS['CLASSOFDIAG'][0].decode(
+            self._raw('CLASSOFDIAG'))
+        out['Treat_at_Hosp']           = LONGFORM_CODE_MAPS['CLASSOFTREAT'][0].decode(
+            self._raw('CLASSOFTREAT'))
         # Flag patients where treatment data is incomplete (Dx & Tx elsewhere)
         out['Treatment_Data_Incomplete'] = out['Class_of_Case'].str.contains(
             'all Tx elsewhere|Tx elsewhere', na=False, case=False)

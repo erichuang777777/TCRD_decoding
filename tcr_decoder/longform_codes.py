@@ -549,3 +549,247 @@ LONGFORM_CODE_MAPS.update({
     'LTAR':  (LTAR_MAP, '4.2.2.3.1'),
     'MINS':  (MINIMALLY_INVASIVE_MAP, '4.1.4.1'),
 })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 性別 Sex (#1.5, p.65)
+# ─────────────────────────────────────────────────────────────────────────────
+
+SEX_MAP = CodeMap({
+    1: 'Male',
+    2: 'Female',
+    3: 'Other (e.g. intersex)',
+    4: 'Transsexual',
+    9: 'Unknown or not documented',
+}, width=1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 個案分類 Class of Case (#2.3, pp.28-29)
+# 診斷狀態分類 Class of Diagnosis Status (#2.3.1, p.82)
+# 治療狀態分類 Class of Treatment Status (#2.3.2, pp.83-88)
+#
+# 2.3 is a summary the registrar assigns; 2.3.1 and 2.3.2 are the two inputs
+# the manual says must jointly determine it (p.73). All three are kept as
+# separate tables because they answer different questions -- diagnosis status
+# is "where/how was this found", treatment status is "what happened to the
+# planned treatment", and class of case is the analysability verdict.
+# ─────────────────────────────────────────────────────────────────────────────
+
+CLASS_OF_CASE_MAP = CodeMap({
+    0: 'Diagnosed at the reporting hospital, but the first course of therapy '
+       'was not given there (the patient chose another hospital, was '
+       'referred, refused treatment, or died/was discharged critically ill '
+       'before treatment started)',
+    1: 'Diagnosed at the reporting hospital, and all or part of the first '
+       'course of therapy was given there',
+    2: 'Diagnosed elsewhere, and all or part of the first course of therapy '
+       'was given at the reporting hospital',
+    3: 'Diagnosed elsewhere with no first-course therapy at the reporting '
+       'hospital; presented here for recurrent or persistent disease',
+    5: 'Diagnosed only at autopsy',
+    7: 'Pathology report only; the patient was never seen at the reporting '
+       'hospital for diagnosis or treatment (excludes autopsy diagnosis) -- '
+       'not reportable',
+    8: 'Known only from a death certificate (DCO) -- not reportable',
+    9: 'Unknown; the record does not document enough to classify the case',
+}, width=1)
+
+CLASS_OF_DIAGNOSIS_MAP = CodeMap({
+    1: 'Diagnosed at the reporting hospital',
+    2: 'Diagnosed elsewhere; presented at the reporting hospital within the '
+       'first course of therapy, with no recurrence, or recurrence status '
+       'unknown',
+    3: 'Diagnosed elsewhere; presented at the reporting hospital after '
+       'recurrence or progression',
+    5: 'Diagnosed only at autopsy',
+    7: 'Pathology report only; not seen at the reporting hospital for '
+       'diagnosis or treatment (excludes autopsy diagnosis)',
+    8: 'Known only from a death certificate',
+}, width=1)
+
+CLASS_OF_TREATMENT_MAP = CodeMap({
+    0: 'Died at the reporting hospital without receiving any treatment there '
+       '(diagnosed here and died or discharged critically ill, or diagnosed '
+       'elsewhere and transferred here before dying)',
+    1: 'The entire first course of therapy was given at the reporting '
+       'hospital, with none at another hospital (includes a case whose only '
+       'first-course therapy is one of the registry\'s defined "other '
+       'treatments")',
+    2: 'No first-course therapy at the reporting hospital: the whole first '
+       'course was given elsewhere, or the case came for a second opinion '
+       'with no treatment here, or the main treatment plan was set by '
+       'another hospital (e.g. maintenance therapy continued here, or a '
+       'referred-out partial radiotherapy course)',
+    3: 'Part of the first course of therapy at the reporting hospital, part '
+       'at another hospital',
+    4: 'The first course of therapy was watchful observation, or only '
+       'non-tumour-directed palliative surgery, pain control, supportive '
+       'care, or a hospice referral',
+    5: 'The first course of therapy was alternative therapy only',
+    6: 'The patient refused treatment in the first course',
+    7: 'Diagnosed and treated elsewhere; presented at the reporting hospital '
+       'because of a complication of the cancer or its treatment',
+    8: 'Diagnosed elsewhere; presented at the reporting hospital for an '
+       'unrelated condition -- not reportable',
+    9: 'First-course treatment status unknown, and refusal cannot be '
+       'confirmed either (e.g. lost to follow-up after the initial '
+       'diagnosis at the reporting hospital)',
+}, width=1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 生存狀態 Vital Status (#5.4, p.234)
+# ─────────────────────────────────────────────────────────────────────────────
+
+VITAL_STATUS_MAP = CodeMap({
+    0: 'Dead',
+    1: 'Alive',
+}, width=1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 首次復發型式 Recurrence Type (#5.2, pp.317-319)
+# ─────────────────────────────────────────────────────────────────────────────
+
+RECURRENCE_TYPE_MAP = CodeMap({
+    0:  'Disease-free after treatment; no recurrence',
+    4:  'Recurrence of an invasive cancer, presenting as carcinoma in situ',
+    6:  'Recurrence of a carcinoma in situ, presenting as carcinoma in situ',
+    10: 'Local recurrence, not specific enough for 13-17 (in the residual '
+        'primary organ, the primary organ, an anastomosis, or the scar of '
+        'the resected organ)',
+    13: 'Invasive cancer, local recurrence',
+    14: 'Invasive cancer, recurrence at a trocar/port site (along the port '
+        'track or a prior surgical entrance site)',
+    15: 'Invasive cancer, local recurrence AND trocar/port-site recurrence '
+        '(codes 13 and 14 combined)',
+    16: 'Carcinoma in situ, local recurrence, not otherwise specified',
+    17: 'Carcinoma in situ, local AND trocar/port-site recurrence',
+    20: 'Regional recurrence, not specific enough for 21-27',
+    21: 'Invasive cancer, recurrence in adjacent tissue or organs only',
+    22: 'Invasive cancer, recurrence in regional lymph nodes only',
+    25: 'Invasive cancer, recurrence in adjacent tissue/organs AND regional '
+        'lymph nodes (codes 21 and 22 combined)',
+    26: 'Carcinoma in situ, regional recurrence, not otherwise specified',
+    27: 'Carcinoma in situ, recurrence in adjacent tissue/organs AND '
+        'regional lymph nodes',
+    30: 'Invasive cancer, one recurrence type from each of two groups: '
+        '(adjacent tissue/organ or regional node recurrence, codes 20-25) '
+        'combined with (local, prior port-site, or surgical-entrance-site '
+        'recurrence, codes 10, 13-15)',
+    36: 'Carcinoma in situ, one recurrence type from each of two groups: '
+        '(regional recurrence, codes 26-27) combined with (local or '
+        'port-site recurrence, codes 16-17)',
+    40: 'Distant recurrence, not specific enough for 46-62',
+    46: 'Carcinoma in situ, distant recurrence',
+    51: 'Invasive cancer, distant recurrence in the peritoneum only, or '
+        'malignant cells in ascites',
+    52: 'Invasive cancer, distant recurrence in the lung only (including '
+        'visceral pleura)',
+    53: 'Invasive cancer, distant recurrence in the pleura only, or '
+        'malignant cells in pleural effusion',
+    54: 'Invasive cancer, distant recurrence in the liver only',
+    55: 'Invasive cancer, distant recurrence in bone only, excluding bone at '
+        'the primary site',
+    56: 'Invasive cancer, distant recurrence in the CNS only (brain and '
+        'spinal cord; excludes the external eye)',
+    57: 'Invasive cancer, distant recurrence in the skin only, excluding '
+        'skin at the primary site',
+    58: 'Invasive cancer, distant recurrence in distant lymph nodes only '
+        '(per each cancer site\'s own definition of distant nodes)',
+    59: 'Invasive cancer, systemic distant recurrence only (lymphoma, '
+        'leukemia, bone marrow metastasis, carcinomatosis, or generalised '
+        'disease)',
+    60: 'Invasive cancer, one recurrence type from each of two groups: '
+        '(one or more distant-site recurrences) combined with (local or '
+        'regional recurrence, codes 10-15, 20-25 or 30)',
+    62: 'Invasive cancer, recurrence at multiple distant sites',
+    70: 'Never disease-free since diagnosis (already had distant metastasis '
+        'at diagnosis, systemic disease at diagnosis, an unknown primary, or '
+        'disease too limited to have been treated)',
+    88: 'Recurrence occurred, but the type is not documented',
+    99: 'Unknown whether the case ever recurred or was ever disease-free '
+        '(usually class of case 3)',
+}, width=2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 首次治療前生活功能狀態評估 Performance Status: KPS + ECOG (#7.6, pp.335-337)
+#
+# The manual states the composite rule explicitly (p.337): characters 1-2
+# carry the KPS decile (00, 10, 20, ..., 100), character 3 the ECOG grade
+# (0-5). When only ECOG was assessed, KPS is coded '00' -- but 000-004 never
+# collide with a genuine KPS=0 combination, because KPS=0 only ever pairs
+# with ECOG=5 (both mean death before treatment), which is code 005.
+# ─────────────────────────────────────────────────────────────────────────────
+
+PERFORMANCE_STATUS_MAP = CodeMap({
+    0:   'ECOG PS 0 only (KPS not assessed): normal activity, unaffected by '
+         'disease',
+    1:   'ECOG PS 1 only (KPS not assessed): unable to do strenuous activity, '
+         'but ambulatory and able to do light or sedentary work',
+    2:   'ECOG PS 2 only (KPS not assessed): ambulatory and fully '
+         'self-caring but unable to work, up to about half of waking hours '
+         'out of bed',
+    3:   'ECOG PS 3 only (KPS not assessed): limited self-care, confined to '
+         'bed or chair more than half of waking hours',
+    4:   'ECOG PS 4 only (KPS not assessed): completely disabled, no '
+         'self-care, totally confined to bed or chair',
+    5:   'Died before treatment (KPS=0 and/or ECOG PS=5)',
+    100: 'KPS 100, ECOG PS 0: normal, no complaints, no evidence of disease',
+    104: 'KPS 10, ECOG PS 4: moribund, fatal processes progressing rapidly',
+    204: 'KPS 20, ECOG PS 4: very sick, urgent hospitalisation needed',
+    209: 'KPS 20 (ECOG not assessed): very sick, urgent hospitalisation '
+         'needed',
+    303: 'KPS 30, ECOG PS 3: severely disabled, hospitalisation indicated, '
+         'death not imminent',
+    304: 'KPS 30, ECOG PS 4: severely disabled, hospitalisation indicated, '
+         'death not imminent',
+    309: 'KPS 30 (ECOG not assessed): severely disabled, hospitalisation '
+         'indicated, death not imminent',
+    403: 'KPS 40, ECOG PS 3: disabled, requires special care and assistance',
+    409: 'KPS 40 (ECOG not assessed): disabled, requires special care and '
+         'assistance',
+    502: 'KPS 50, ECOG PS 2: requires considerable assistance and frequent '
+         'medical care',
+    503: 'KPS 50, ECOG PS 3: requires considerable assistance and frequent '
+         'medical care',
+    509: 'KPS 50 (ECOG not assessed): requires considerable assistance and '
+         'frequent medical care',
+    602: 'KPS 60, ECOG PS 2: requires occasional assistance but can care for '
+         'most needs',
+    609: 'KPS 60 (ECOG not assessed): requires occasional assistance but can '
+         'care for most needs',
+    701: 'KPS 70, ECOG PS 1: cares for self, unable to carry on normal '
+         'activity',
+    702: 'KPS 70, ECOG PS 2: cares for self, unable to carry on normal '
+         'activity',
+    709: 'KPS 70 (ECOG not assessed): cares for self, unable to carry on '
+         'normal activity',
+    801: 'KPS 80, ECOG PS 1: normal activity with effort, some disease '
+         'symptoms',
+    809: 'KPS 80 (ECOG not assessed): normal activity with effort, some '
+         'disease symptoms',
+    900: 'KPS 90, ECOG PS 0: able to carry on normal activity, minor disease '
+         'symptoms',
+    901: 'KPS 90, ECOG PS 1: able to carry on normal activity, minor disease '
+         'symptoms',
+    909: 'KPS 90 (ECOG not assessed): able to carry on normal activity, '
+         'minor disease symptoms',
+    988: 'Not applicable: the first course of therapy was given entirely at '
+         'another hospital, and a pre-treatment functional-status assessment '
+         'could not be obtained',
+    999: 'Not documented, or unknown',
+}, width=3)
+
+
+LONGFORM_CODE_MAPS.update({
+    'SEX':          (SEX_MAP, '1.5'),
+    'CLASS95':      (CLASS_OF_CASE_MAP, '2.3'),
+    'CLASSOFDIAG':  (CLASS_OF_DIAGNOSIS_MAP, '2.3.1'),
+    'CLASSOFTREAT': (CLASS_OF_TREATMENT_MAP, '2.3.2'),
+    'VSTA':         (VITAL_STATUS_MAP, '5.4'),
+    'RETYPE95':     (RECURRENCE_TYPE_MAP, '5.2'),
+    'KPSECOG':      (PERFORMANCE_STATUS_MAP, '7.6'),
+})

@@ -558,18 +558,20 @@ class TestTCREncoder:
         assert 'LVI_SSF' not in enc.unencoded_columns
         assert {'SSF8_raw', 'SSF9_raw'} <= set(raw.columns)
 
-    def test_lung_generic_performance_status_has_no_codetable(self, lung_clean_df):
-        """'Performance_Status' (generic KPSECOG, all cancer types) is decoded
-        by trusting the input file's own pre-existing column, not a code
-        table this package owns -- it stays unencoded regardless of cancer
-        group. This used to collide with lung's SSF3 (ECOG/KPS) column of
-        the same name; SSF3 now has its own column ('Performance_Status_SSF3')
-        and round-trips normally -- see the next test."""
+    def test_lung_generic_performance_status_now_has_a_codetable(self, lung_clean_df):
+        """'Performance_Status' (#7.6 KPSECOG, all cancer types) used to be
+        decoded by trusting the input file's own pre-existing column, with no
+        code table this package owned -- it stayed unencoded regardless of
+        cancer group. It now has one (longform_codes.PERFORMANCE_STATUS_MAP)
+        and round-trips. This used to collide in name with lung's SSF3
+        (ECOG/KPS) column; SSF3 has its own column ('Performance_Status_SSF3')
+        and round-trips independently -- see the next test."""
         enc = TCREncoder(lung_clean_df)
         raw = enc.encode(on_error='raise')
         assert enc.cancer_group == 'lung'
-        assert 'Performance_Status' in enc.unencoded_columns
+        assert 'Performance_Status' not in enc.unencoded_columns
         assert 'Performance_Status_SSF3' not in enc.unencoded_columns
+        assert 'KPSECOG_raw' in raw.columns
         assert 'SSF3_raw' in raw.columns
 
     def test_colorectum_encode_runs_without_raising(self, colorectum_clean_df):

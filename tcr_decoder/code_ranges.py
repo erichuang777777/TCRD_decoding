@@ -554,6 +554,26 @@ LONGFORM: Dict[str, Tuple[int, FrozenSet[str], str]] = {
     # LTAR/SEQRS/SEQLS are additive bitmasks (see longform_codes._additive_map);
     # their legal ranges are every subset-sum, generated from the same
     # component table the decoder uses, not typed out by hand.
+    'SEX':       (1, _codes(_num_range(1, 4, 1), ('9',)),
+                  'Longform p.65 性別 (#1.5)'),
+    'CLASS95':   (1, _codes(_num_range(0, 3, 1), ('5', '7', '8', '9')),
+                  'Longform p.28-29 個案分類 (#2.3)'),
+    'CLASSOFDIAG': (1, _codes(_num_range(1, 3, 1), ('5', '7', '8')),
+                    'Longform p.82 診斷狀態分類 (#2.3.1)'),
+    'CLASSOFTREAT': (1, _codes(_num_range(0, 9, 1)),
+                      'Longform p.83-88 治療狀態分類 (#2.3.2)'),
+    'VSTA':      (1, _codes(('0', '1')), 'Longform p.234 生存狀態 (#5.4)'),
+    'RETYPE95':  (2, _codes(
+                     ('00', '04', '06', '10', '13', '14', '15', '16', '17',
+                      '20', '21', '22', '25', '26', '27', '30', '36', '40',
+                      '46', '51', '52', '53', '54', '55', '56', '57', '58',
+                      '59', '60', '62', '70', '88', '99')),
+                  'Longform p.317-319 首次復發型式 (#5.2)'),
+    'KPSECOG':   (3, _codes(_num_range(0, 5, 3), ('100', '104', '204', '209',
+                            '303', '304', '309', '403', '409', '502', '503',
+                            '509', '602', '609', '701', '702', '709', '801',
+                            '809', '900', '901', '909', '988', '999')),
+                  'Longform p.335-337 首次治療前生活功能狀態評估 (#7.6)'),
     'MINS':      (1, _codes(_num_range(0, 4, 1), ('8', '9')),
                   'Longform p.181-183 微創手術 (#4.1.4.1)'),
     'RTAR':      (2, _codes(*(_num_range(0, 63, 2),), ('-9', '-1')),
