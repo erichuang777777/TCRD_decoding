@@ -5,7 +5,13 @@
 >
 > **對應模組**：`tcr_decoder/decoders.py`、`tcr_decoder/ssf_registry.py`（乳癌 SSF profile）
 >
-> **最後更新**：2026-05-15
+> **最後更新**：2026-08-14
+>
+> **依據**：《癌症部位特定因子編碼手冊》民國114年12月修訂版（`codebook_md/ssf_chunk_007`、
+> `ssf_chunk_008`，乳癌 pp.119–151）。乳癌 SSF1–SSF10 **每個欄位長度都是 3 碼**，
+> 所有代碼一律補零到 3 碼（BR 分數 6 分是 `060`，不是 `6`；ER 70% 是 `070`）。
+> 各欄位的完整官方編碼範圍已機器化於 `tcr_decoder/code_ranges.py`，
+> 並由 `tests/test_breast_codebook_conformance.py` 全域窮舉驗證。
 
 ---
 
@@ -18,7 +24,7 @@
 | 3 | 新輔助治療反應 | SSF3 | 類別 |
 | 4 | Sentinel LN 切除數目 | SSF4 | 整數 |
 | 5 | Sentinel LN 陽性數目 | SSF5 | 整數 |
-| 6 | Nottingham 評分 / 分級 | SSF6 | 整數 3–9 或 Grade 1–3 |
+| 6 | Nottingham 評分 / 分級 | SSF6 | 分數 3–9 → 030–090；或 Grade 1–3 → 110/120/130 |
 | 7 | HER2 IHC 分數 + ISH 結果 + 診斷年份 | SSF7 | 複合條件 |
 | 8 | Paget's Disease 是否存在 | SSF8 | 布林 |
 | 9 | LVI（淋巴血管侵犯）是否存在 | SSF9 | 布林 |
@@ -44,12 +50,13 @@
     若 er_qualitative == negative:    → SSF1 = 121
 
 若 er_percent 有值:
-    若 er_percent == 0:               → SSF1 = 0   (陰性 0%)
+    若 er_percent == 0:               → SSF1 = 000  (陰性 0%)
     若 er_percent >= 1:
-        若 intensity == weak:         → SSF1 = "W{er_percent}"  (e.g. W15)
-        若 intensity == intermediate: → SSF1 = "I{er_percent}"
-        若 intensity == strong:       → SSF1 = "S{er_percent}"
-        若 intensity 未知:            → SSF1 = er_percent  (純數字)
+        # 字母碼 = 強度字母 + 2 碼比例；100% 依手冊寫成 "00"
+        若 intensity == weak:         → SSF1 = "W%02d" % (er_percent % 100)   # 15% → W15、5% → W05、100% → W00
+        若 intensity == intermediate: → SSF1 = "I%02d" % (er_percent % 100)
+        若 intensity == strong:       → SSF1 = "S%02d" % (er_percent % 100)
+        若 intensity 未知:            → SSF1 = "%03d" % er_percent            # 70% → 070
 
 若只有定性描述（無百分比）:
     若 er_qualitative == positive:    → SSF1 = 110  (陽性，比例不明)
@@ -60,9 +67,27 @@
 若 未記錄 / 不明:                        → SSF1 = 999
 ```
 
+### Allred score 對應（手冊 p.123）
+
+若報告以 Allred score 描述（intensity + proportion score），第一碼為強度
+（0/W/I/S），第二三碼為 proportion score 對應碼：
+
+| Proportion score | 陽性細胞比例 | 第二、三碼 |
+|---|---|---|
+| 0 | 0% | 00 |
+| 1 | <1% | **整格填共用碼 120（陰性）** |
+| 2 | 1–10% | 06 |
+| 3 | 11–33% | 22 |
+| 4 | 34–66% | 49 |
+| 5 | ≧67% | 84 |
+
+> proportion score 1（<1%）不寫成字母碼，而是直接填 120，與「ER 反應比例 <1%
+> 不論染色強度」的共用碼一致。這一格先前在 `decode_er_pr()` 註解與
+> `fable-opinion.md`（工作5）標記為「待人工核對 PDF」，現已由手冊 p.123 表格確認。
+
 ### 人工審查觸發條件
 - 報告只寫「ER (+)」但無百分比 → 輸出 110，標記提醒補充百分比
-- 百分比介於 0–1% 之間 → 臨床意義模糊，flag
+- 百分比介於 0–1% 之間 → 依手冊填 120（陰性），並 flag 提醒人工確認
 
 ---
 
@@ -103,15 +128,21 @@
 
 ### 編碼規則
 ```
-若 slnb_performed == False:       → SSF4 = 988, SSF5 = 988
+若 slnb_performed == False:       → SSF4 = 000  (未執行哨兵淋巴結手術), SSF5 = 000
+若 前導性治療後才做哨兵淋巴結手術: → SSF4 = 988, SSF5 = 988   (手冊 p.131/132)
 
 若 slnb_performed == True:
-    SSF4 = sln_examined  (0–89)
-    SSF5 = sln_positive  (0–89)
+    SSF4 = "%03d" % sln_examined  (001–089)
+    SSF5 = "%03d" % sln_positive  (001–089)
 
-    若 切除但找不到組織 / 數目不明:  → SSF4 = 996
+    若 切除但找不到淋巴結組織 / 數目不明:  → SSF4 = 996
+    若 SSF5：淋巴結有被侵犯但數目不詳:     → SSF5 = 996
+    若 僅有 ITC（≤0.2mm）侵犯:             → SSF5 = 000
 
 交叉驗證：sln_positive ≤ sln_examined，否則 flag ERROR
+
+> 注意：SSF4 與 SSF5 的 000 意義不同 —— SSF4 000 = 根本沒做哨兵淋巴結手術，
+> SSF5 000 = 有做但沒有淋巴結被侵犯。
 ```
 
 ---
@@ -125,9 +156,13 @@
 ### 編碼規則
 ```
 若有 nottingham_score:
-    score 3–5:  → SSF6 = score  (Grade 1，分化良好)
-    score 6–7:  → SSF6 = score  (Grade 2，中度分化)
-    score 8–9:  → SSF6 = score  (Grade 3，分化不良)
+    score 3–5:  → SSF6 = "0{score}0"  (030/040/050，Grade 1，分化良好)
+    score 6–7:  → SSF6 = "0{score}0"  (060/070，Grade 2，中度分化)
+    score 8–9:  → SSF6 = "0{score}0"  (080/090，Grade 3，分化不良)
+
+> ⚠️ 官方編碼範圍為 030,040,050,060,070,080,090,110,120,130,988,999（手冊 p.134/141）。
+> 直接填分數本身（`6`）不是合法代碼，申報會被退件；必須寫成 `060`。
+> 本規格早期版本誤寫成「SSF6 = score」，`encode_nottingham()` 已更正。
 
 若只有 nottingham_grade:
     Grade 1:    → SSF6 = 110
@@ -201,7 +236,7 @@ her2_ihc == "ultralow":
 ### 編碼規則
 ```
 有 Paget's disease:                        → SSF8 = 010
-無 Paget's disease:                        → SSF8 = 0
+無 Paget's disease:                        → SSF8 = 000
 不適用（檢體未含乳頭 / 乳暈）:              → SSF8 = 988
 未記錄:                                    → SSF8 = 999
 ```
@@ -213,7 +248,7 @@ her2_ihc == "ultralow":
 ### 編碼規則
 ```
 LVI 存在（lymphovascular invasion present）: → SSF9 = 010
-LVI 不存在:                                  → SSF9 = 0
+LVI 不存在:                                  → SSF9 = 000
 新輔助治療後無殘留腫瘤（LVI 無法評估）:       → SSF9 = 990
 未記錄:                                      → SSF9 = 999
 ```
@@ -228,11 +263,14 @@ LVI 不存在:                                  → SSF9 = 0
 ### 編碼規則
 ```
 若 ki67_percent >= 1:
-    SSF10 = round(ki67_percent)  (整數 1–100)
+    SSF10 = "%03d" % round(ki67_percent)   # 四捨五入取整數，補零 3 碼：14% → 014、8.6% → 009
 
-若 ki67_percent < 1:
-    SSF10 = f"A{round(ki67_percent * 10):02d}"
-    # 例：0.5% → A05，0.1% → A01
+若 0 < ki67_percent < 1:
+    SSF10 = "A%02d" % floor(ki67_percent * 10)   # 無條件捨去至小數第一位
+    # 例：0.3% → A03，0.9% → A09；官方僅定義 A00–A09
+
+若 ki67_percent == 0:
+    SSF10 = 000
 
 分類（僅供參考，不影響代碼）：
     0–13%  → Low

@@ -149,13 +149,56 @@ mismatches = compare_roundtrip("registry.xlsx")   # DataFrame: Patient_ID, Field
 export_roundtrip_report("registry.xlsx", "roundtrip_report.xlsx")  # multi-sheet Excel report
 ```
 
-A handful of TCR codes decode to *identical* text by design of the codebook
-itself (e.g. both `888` and `988` mean plain "Not applicable" for several SSF
-fields, and a Nottingham score entered as `"60"` vs `"6"` decodes the same
-way) — re-encoding such a label returns the canonical code, which may not be
-the exact original. These show up as low-volume, clinically-meaningless
-mismatches; the report's `Notes` sheet explains this so it isn't mistaken for
-a bug.
+**Verified groups must report ZERO mismatches.** Fourteen cancer groups
+(breast, prostate, endometrium, thyroid, cervix, stomach, liver, lung,
+colorectum, head & neck, esophagus, pancreas, ovary, bladder) have had their
+ten SSF fields verified field-by-field against the printed code book: the official 編碼範圍 of each field is transcribed in
+`tcr_decoder/code_ranges.py`, and `tests/test_breast_codebook_conformance.py`
+enumerates every legal code to prove that decode understands all of them, that
+no two codes share a decoded label, that `encode(decode(code)) == code` byte
+for byte, and that encode only ever emits a submittable code at the field's
+official width (a Nottingham score of 6 encodes to `060`, never `6`). A
+mismatch on a breast field therefore means the *input file* holds a code
+outside the official range, and `Roundtrip_Code` shows what the registry would
+accept.
+
+> **FHIR / 乳癌 IG**：把這些代碼表變成 FHIR CodeSystem/ValueSet、
+> Questionnaire 與 Task 的產生器，以及乳癌摘錄原則與示範，已移到
+> [TW-Breast-Cancer-FHIR-IG](https://github.com/erichuang777777/TW-Breast-Cancer-FHIR-IG)
+> 的 `tcr_workbench/`。那個 repo 以本套件為相依，本 repo 只負責代碼表與雙向轉換。
+
+### The breast validation data set
+
+One command builds the full evidence file — every legal code with its code
+book meaning, plus pairwise-complete synthetic cases run through the real
+pipeline in both directions:
+
+```bash
+python -m tcr_decoder --build-validation breast_validation_dataset.xlsx
+```
+
+Sheets: `說明` (how to read it), `Summary`, `Field_Coverage` (all 1,187 legal
+breast codes → 碼冊中文定義 → English clinical label → re-encoded code),
+`Case_Combinations` (542 cases covering 100% of the 5,882 two-field value
+pairs), `Case_Roundtrip` (5,420 field comparisons through the full
+decode→encode pipeline), `Clinical_View` (each case's decoded clinical
+picture plus its molecular subtype / NPI reading) and `Failures` (must be
+empty). `tests/test_validation_dataset.py` runs the same builder and fails
+if a single code or combination stops round-tripping.
+
+> Code columns in that workbook are **text**: HER2 `000` and `100` are
+> different codes. Read it back with `dtype=str` or pandas will infer `000`
+> as the number 0 — exactly the defect this data set found in the decoder's
+> own Excel reader (now fixed: all `*_raw` / `*_decoded` columns are read as
+> text so fixed-width codes keep their leading zeros).
+
+20,172 legal codes across those fourteen groups round-trip exactly, and every
+one of them carries the code book's own Chinese definition in the validation
+workbook. Lymphoma and leukemia are the two SSF-collecting sites still
+missing: the manual keys them off the morphology code rather than the primary
+site, which needs a change to cancer-group detection — see
+[`docs/codebook_conformance_findings.md`](docs/codebook_conformance_findings.md).
+The report's `Notes` sheet says the same.
 
 ---
 
@@ -245,6 +288,10 @@ tcr_decoder/
 ├── encoder.py           # TCREncoder class (inverse pipeline orchestrator)
 ├── roundtrip.py         # compare_roundtrip / export_roundtrip_report
 ├── codemap.py           # CodeMap: bidirectional code<->label source of truth
+├── code_ranges.py       # Official 編碼範圍 per field (breast, verified vs the manual)
+├── validation.py        # Bidirectional validation data set builder
+├── facts.py             # Observation/Resolution engine: keep every source,
+│                        resolve per the code book's own rule
 ├── ssf_registry.py      # Multi-cancer SSF routing (11 profiles), decode + encode
 ├── decoders.py          # Breast-specific SSF decoders
 ├── encoders.py          # Inverse of decoders.py/ssf_registry.py's bespoke decoders
@@ -261,6 +308,8 @@ tests/
 ├── test_ssf_registry.py # SSF routing, cancer group detection
 ├── test_decoders.py     # Individual decoder tests (boundary, edge cases)
 ├── test_encoders.py     # Encode-direction + round-trip tests (all 11 profiles)
+├── test_breast_codebook_conformance.py  # Exhaustive breast <-> code book conformance
+├── test_validation_dataset.py           # Field + pairwise-case validation data set (14 groups)
 ├── test_pipeline.py     # End-to-end pipeline tests
 ├── test_synth.py        # Synthetic generator tests
 └── test_adversarial.py  # Adversarial / stress tests
@@ -281,7 +330,7 @@ pytest tests/ --cov=tcr_decoder --cov-report=term-missing
 pytest tests/test_adversarial.py -v
 ```
 
-**950+ tests, all passing** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression, pipeline bug regression (Round 3), mathematical formula verification (Round 4), encode-direction round trips across all 11 cancer profiles (`test_encoders.py`)
+**1700+ tests, all passing** | categories: sentinel chaos, boundary values, type injection, ICD-O-3 edge cases, profile contracts, roundtrip integrity, performance (10K rows), CLI smoke, contradictory data, rstrip regression, pipeline bug regression (Round 3), mathematical formula verification (Round 4), encode-direction round trips across all 11 cancer profiles (`test_encoders.py`), exhaustive breast code-book conformance over every legal code (`test_breast_codebook_conformance.py`)
 
 ---
 

@@ -101,3 +101,7 @@ codebook_md/
 # ── Archive of superseded scripts ─────────────────────────────────────────────
 # Entire directory blocked — contains real data files from development phase
 _archive/
+
+# ── Generated artefacts (regenerate with one command; not source of truth) ────
+# python -m tcr_decoder --build-validation <out>.xlsx --cancer <group>
+validation_output/
