@@ -189,6 +189,19 @@ UNVERIFIED_FIELD_NUMBERS = frozenset({
     'Cause_of_Death', 'Cause_of_Death_Extended',
     'Metastasis_Site_1', 'Metastasis_Site_2', 'Metastasis_Site_3',
     'Recurrence_Date_Extended', 'Recurrence_Type_Extended',
+    # 'Extended follow-up' (VSTA6/LCD6/RETYPE6/DIECAUSE6) is a distinct round
+    # of follow-up data collection from section 5's 'initial follow-up'
+    # fields (5.1-5.4), and the manual does not give it its own field-number
+    # block anywhere this index found -- see longform_fields.py. Reusing 5.x
+    # would be a guess, so these three plus Cancer_Status (CSTA, whose real
+    # official field this index could not identify at all) are left here
+    # rather than pointing at a number that names a different field.
+    'Cancer_Status', 'Vital_Status_Extended', 'Last_Contact_Extended',
+    # 癌症發生順序號碼 (#2.2) is "this occurrence's sequence number" (Cancer_
+    # Sequence, raw SEQ2: 1st, 2nd...), not "how many primaries this patient
+    # has" (Total_Primaries, raw SEQ1) -- related concepts, not the same
+    # field. Total_Primaries kept the shared number as a placeholder.
+    'Total_Primaries',
     'Patient_ID',        # 1.1+1.2: composite of two official fields
     'Survival_Years',    # derived from 5.4 and 2.5, not a reported field
 })
@@ -207,7 +220,7 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'Sex':                        '1.5',
     # Section 2: Diagnosis info
     'Age_at_Diagnosis':           '2.1',
-    'Total_Primaries':            '2.2',
+    'Total_Primaries':            '2.2',  # see UNVERIFIED_FIELD_NUMBERS
     'Cancer_Sequence':            '2.2',
     'Class_of_Case':              '2.3',
     'Diag_at_Hosp':               '2.3.1',
@@ -281,14 +294,14 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'Immuno_This_Hosp':           '4.3.9',
     'Immuno_Other_Hosp':          '4.3.8',
     # Section 5: Follow-up
-    'Vital_Status':               '5.1',
-    'Cancer_Status':              '5.4',
+    'Vital_Status':               '5.4',
+    'Cancer_Status':              '5.4',  # see UNVERIFIED_FIELD_NUMBERS
     'Last_Contact_Date':          '5.3',
     'Recurrence_Date':            '5.1',
     'Recurrence_Type':            '5.2',
     'Cause_of_Death':             '5.7',
-    'Vital_Status_Extended':      '5.1',
-    'Last_Contact_Extended':      '5.4',
+    'Vital_Status_Extended':      '5.1',  # see UNVERIFIED_FIELD_NUMBERS
+    'Last_Contact_Extended':      '5.4',  # see UNVERIFIED_FIELD_NUMBERS
     'Survival_Years':             '5.4+2.5',
     'Recurrence_Date_Extended':   '5.5',
     'Recurrence_Type_Extended':   '5.6',

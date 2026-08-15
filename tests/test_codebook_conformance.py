@@ -351,7 +351,7 @@ def test_the_unverified_field_number_list_does_not_grow_silently():
 
     assert UNVERIFIED_FIELD_NUMBERS <= set(TCR_FIELD_NUMBER), (
         'UNVERIFIED_FIELD_NUMBERS lists a column that no longer exists')
-    assert len(UNVERIFIED_FIELD_NUMBERS) == 9
+    assert len(UNVERIFIED_FIELD_NUMBERS) == 13
 
 
 def test_field_widths_agree_with_the_manual():
@@ -499,3 +499,29 @@ def test_negative_sentinel_codes_are_not_padded_past_their_sign():
 
     assert RMOD_MAP.encode_one(RMOD_MAP.decode_one('-9')) == '-9'
     assert RMOD_MAP.encode_one(RMOD_MAP.decode_one('-1')) == '-1'
+
+
+def test_vital_status_and_cancer_status_do_not_share_a_field_number():
+    """Regression: both used to claim #5.4/#5.1 interchangeably.
+
+    5.4 is 生存狀態 (0=dead, 1=alive) -- that is Vital_Status (raw VSTA), not
+    Cancer_Status (raw CSTA). The mix-up happened while correcting a
+    different field's number without checking what number it displaced.
+
+    This checks only the pair that was actually found wrong, not every
+    column in the registry: TCR_FIELD_NUMBER has ~250 entries going back
+    before this project's codebook-conformance work, and asserting zero
+    collisions across all of them is a separate full-registry audit (there
+    is at least one more, Path_Stage vs Combined_Stage at #3.13, not yet
+    resolved -- see docs/codebook_conformance_findings.md).
+    """
+    from tcr_decoder.data_dictionary import (
+        TCR_FIELD_NUMBER, UNVERIFIED_FIELD_NUMBERS)
+
+    assert TCR_FIELD_NUMBER['Vital_Status'] == '5.4'
+    assert 'Vital_Status' not in UNVERIFIED_FIELD_NUMBERS
+    # Cancer_Status still carries the old, now-known-wrong '5.4' as a
+    # placeholder (the convention this registry uses elsewhere for a number
+    # that could not be confirmed) -- what matters is that it is flagged as
+    # unverified, so nothing treats it as evidence of the real field.
+    assert 'Cancer_Status' in UNVERIFIED_FIELD_NUMBERS
