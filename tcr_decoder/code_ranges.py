@@ -499,7 +499,31 @@ LONGFORM: Dict[str, Tuple[int, FrozenSet[str], str]] = {
                   'Longform p.127-129 區域淋巴結檢查數目'),
     'LN_POSITI': (2, _codes(_num_range(0, 90, 2), ('95', '97', '98', '99')),
                   'Longform p.130-131 區域淋巴結侵犯數目'),
+    'PRESLNSCO': (1, _codes(_num_range(0, 7, 1), ('9',)),
+                  'Longform p.203 外院區域淋巴結手術範圍'),
+    'SLNSCO95':  (1, _codes(_num_range(0, 7, 1), ('9',)),
+                  'Longform p.207 申報醫院區域淋巴結手術範圍'),
 }
+
+# Appendix B surgery codes are SITE-SPECIFIC: the 編碼範圍 line is the same
+# for every site (000, 100-800, 900, 980, 990 -- Longform-Manual p.186/188),
+# but which of those 705 codes exist, and what they mean, comes from the
+# site's own Appendix B table. Only breast has been transcribed.
+SURGERY_CODES: Dict[str, Tuple[int, FrozenSet[str], str]] = {
+    'breast': (3, _codes((
+        '000', '200', '210', '215', '240', '290',
+        '300', '310', '311', '312', '313', '314',
+        '320', '321', '322', '323', '324',
+        '400', '410', '411', '412', '413', '414',
+        '420', '421', '422', '423', '424',
+        '500', '510', '530', '540', '550', '560',
+        '520', '570', '580', '590', '630',
+        '600', '610', '640', '650', '660', '670',
+        '620', '680', '690', '730', '740',
+        '700', '710', '720', '760', '800', '900', '990',
+    )), 'Longform 附錄B pp.378-380 Breast C500-C509 原發部位手術方式'),
+}
+
 
 CODE_RANGES: Dict[str, Dict[str, Tuple[int, FrozenSet[str], str]]] = {
     'breast': BREAST,

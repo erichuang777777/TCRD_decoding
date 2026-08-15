@@ -214,6 +214,10 @@ can decide it alone. `TCRDecoder` passes `MCODE_raw` automatically when the
 column is present; without a morphology column those cases fall back to their
 site and a nodal lymphoma reads as `generic`.
 
+The two surgery-of-primary-site fields (`PRESTYPE`, `STYPE95`) now share one
+Appendix B table instead of two different legacy vocabularies; breast is
+transcribed, the other ~29 sites are not.
+
 Still outstanding: the other 62 Longform fields have no code table yet — see
 [`docs/codebook_conformance_findings.md`](docs/codebook_conformance_findings.md).
 The report's `Notes` sheet says the same.

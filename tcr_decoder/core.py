@@ -2,20 +2,27 @@
 TCRDecoder — Main orchestrator for Taiwan Cancer Registry decoding pipeline.
 
 Supports ANY cancer type registered in the Taiwan Cancer Registry (TCR).
-SSF1-10 are automatically decoded using the correct cancer-specific interpretation
-based on the ICD-O-3 topography code (TCODE1).
+SSF1-10 are automatically decoded using the correct cancer-specific
+interpretation, routed by the ICD-O-3 topography code (TCODE1) -- except for
+lymphoma and leukemia, which the code book routes by MORPHOLOGY (MCODE).
 
 Supported cancer groups with full custom SSF decoders:
-    breast      (C50) — ER/PR/HER2/Ki67/Nottingham
+    breast      (C50) — ER/PR/HER2/Ki67/Nottingham/sentinel nodes
     lung        (C34) — nodules/VPI/ECOG/effusion/mediastinal LN/EGFR/ALK
-    colorectum  (C18-C21) — CEA/MSI/KRAS/peritoneal mets
-    liver       (C22) — AFP/HBV/HCV/Child-Pugh/cirrhosis
+    colorectum  (C18-C21) — CEA/CRM/BRAF/RAS/obstruction/perforation/MSI
+    liver       (C22) — AFP/HBV/HCV/Child-Pugh/Ishak fibrosis
     cervix      (C53) — SCC antigen value/status
-    stomach     (C16) — CEA/H.pylori/tumor depth/LVI
-    thyroid     (C73) — focality/extrathyroidal/BRAF
-    prostate    (C61) — PSA/Gleason/cores/extraprostatic
-    nasopharynx (C11) — EBV serology/plasma EBV DNA
-    endometrium (C54) — MMR/POLE/p53/FIGO molecular
+    stomach     (C16) — CEA/H.pylori/tumour depth/LVI
+    thyroid     (C73) — not an SSF-collecting site: every field is 988
+    prostate    (C61) — PSA/Gleason patterns and score/biopsy cores/cT method
+    endometrium (C54) — ER/PR/FIGO grade/POLE/MSI/p53
+    head_neck   (C00-C14, C30-C32, C76.0) — node size/ECE/levels/depth/ENE
+    esophagus   (C15) — PET-CT/MIE/tumour regression grade
+    pancreas    (C25) — CEA/CA 19-9/Ki-67/mitotic count/HbA1c
+    ovary       (C56) — CA-125 pre/post therapy/residual tumour
+    bladder     (C67) — WHO-ISUP grade/nodal ENE/muscularis propria
+    lymphoma    (by MCODE) — HIV/B symptoms/IPI/FLIPI/HTLV-1/CMV/HBV/HCV/ESR-IPS
+    leukemia    (by MCODE) — karyotype/molecular/induction response/GVHD/MRD
     generic     (any) — numeric passthrough for unknown sites
 
 Usage:
@@ -86,80 +93,124 @@ AJCC_MAP = {
     '08':    'AJCC 8th Edition (2018)',
 }
 
-PRESTYPE_MAP = {
-    '0':   'No outside hospital surgery',
-    '20':  'Partial mastectomy / lumpectomy',
-    '22':  'Modified radical mastectomy',
-    '24':  'Total / simple mastectomy',
-    '41':  'Local excision — margins positive or NOS',
-    '51':  'Biopsy only',
-    '99':  'Unknown',
-}
-
-STYPE95_MAP = {
-    # 2025 TCR 3-digit codes (official codebook Appendix B, breast C50)
-    '0':   'No surgery',
-    '000': 'No surgery',
-    '200': 'Partial mastectomy (lumpectomy / segmental / quadrantectomy)',
-    '210': 'Diagnostic excision — no pre-op biopsy proven diagnosis',
-    '215': 'Excisional biopsy for atypia',
-    '240': 'Re-excision of margins (partial mastectomy)',
+# Appendix B, Breast C500-C509 (Longform-Manual pp.378-380). Both the
+# reporting-hospital and the outside-hospital surgery fields draw on this one
+# table -- they are the same question asked about two facilities, so they must
+# not have two different vocabularies.
+BREAST_SURGERY_MAP = {
+    '000': 'No surgery of primary site; autopsy ONLY',
+    '200': 'Partial mastectomy, NOS (lumpectomy, segmental mastectomy, '
+           'quadrantectomy, tylectomy), with or without nipple resection',
+    '210': 'Excisional breast biopsy — diagnostic excision, no pre-operative '
+           'biopsy-proven diagnosis',
+    '215': 'Excisional breast biopsy for atypia',
+    '240': 'Re-excision of margins for gross or microscopic residual disease '
+           '(less than total mastectomy)',
     '290': 'Central lumpectomy — nipple areolar complex removed',
+
     '300': 'Skin-sparing mastectomy',
-    '310': 'Skin-sparing mastectomy WITHOUT contralateral removal',
+    '310': 'Skin-sparing mastectomy WITHOUT removal of the contralateral breast',
     '311': 'Skin-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
     '312': 'Skin-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
     '313': 'Skin-sparing mastectomy WITHOUT contralateral, implant reconstruction',
     '314': 'Skin-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-    '320': 'Skin-sparing mastectomy WITH contralateral removal',
+    '320': 'Skin-sparing mastectomy WITH removal of the contralateral breast',
     '321': 'Skin-sparing mastectomy WITH contralateral, reconstruction NOS',
     '322': 'Skin-sparing mastectomy WITH contralateral, tissue reconstruction',
     '323': 'Skin-sparing mastectomy WITH contralateral, implant reconstruction',
     '324': 'Skin-sparing mastectomy WITH contralateral, combined reconstruction',
+
     '400': 'Nipple-sparing mastectomy',
-    '410': 'Nipple-sparing mastectomy WITHOUT contralateral removal',
+    '410': 'Nipple-sparing mastectomy WITHOUT removal of the contralateral breast',
     '411': 'Nipple-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
     '412': 'Nipple-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
     '413': 'Nipple-sparing mastectomy WITHOUT contralateral, implant reconstruction',
     '414': 'Nipple-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-    '420': 'Nipple-sparing mastectomy WITH contralateral removal',
+    '420': 'Nipple-sparing mastectomy WITH removal of the contralateral breast',
     '421': 'Nipple-sparing mastectomy WITH contralateral, reconstruction NOS',
     '422': 'Nipple-sparing mastectomy WITH contralateral, tissue reconstruction',
     '423': 'Nipple-sparing mastectomy WITH contralateral, implant reconstruction',
     '424': 'Nipple-sparing mastectomy WITH contralateral, combined reconstruction',
+
+    # The areolar-sparing and total-mastectomy reconstruction sub-codes do NOT
+    # follow the 31x/41x pattern: the manual assigns them out-of-block numbers
+    # (530-560, 570-630, 640-670, 680-740). Guessing the pattern would put
+    # them in the wrong place.
     '500': 'Areolar-sparing mastectomy',
-    '510': 'Areolar-sparing mastectomy WITHOUT contralateral removal',
-    '520': 'Areolar-sparing mastectomy WITH contralateral removal',
+    '510': 'Areolar-sparing mastectomy WITHOUT removal of the contralateral breast',
+    '530': 'Areolar-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
+    '540': 'Areolar-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
+    '550': 'Areolar-sparing mastectomy WITHOUT contralateral, implant reconstruction',
+    '560': 'Areolar-sparing mastectomy WITHOUT contralateral, combined reconstruction',
+    '520': 'Areolar-sparing mastectomy WITH removal of the contralateral breast',
+    '570': 'Areolar-sparing mastectomy WITH contralateral, reconstruction NOS',
+    '580': 'Areolar-sparing mastectomy WITH contralateral, tissue reconstruction',
+    '590': 'Areolar-sparing mastectomy WITH contralateral, implant reconstruction',
+    '630': 'Areolar-sparing mastectomy WITH contralateral, combined reconstruction',
+
     '600': 'Total (simple) mastectomy',
-    '610': 'Total mastectomy WITHOUT contralateral removal',
-    '620': 'Total mastectomy WITH contralateral removal',
+    '610': 'Total (simple) mastectomy WITHOUT removal of the contralateral breast',
+    '640': 'Total (simple) mastectomy WITHOUT contralateral, reconstruction NOS',
+    '650': 'Total (simple) mastectomy WITHOUT contralateral, tissue reconstruction',
+    '660': 'Total (simple) mastectomy WITHOUT contralateral, implant reconstruction',
+    '670': 'Total (simple) mastectomy WITHOUT contralateral, combined reconstruction',
+    '620': 'Total (simple) mastectomy WITH removal of the contralateral breast',
+    '680': 'Total (simple) mastectomy WITH contralateral, reconstruction NOS',
+    '690': 'Total (simple) mastectomy WITH contralateral, tissue reconstruction',
+    '730': 'Total (simple) mastectomy WITH contralateral, implant reconstruction',
+    '740': 'Total (simple) mastectomy WITH contralateral, combined reconstruction',
+
     '700': 'Radical mastectomy, NOS',
-    '710': 'Radical mastectomy WITHOUT contralateral removal',
-    '720': 'Radical mastectomy WITH contralateral removal',
-    '760': 'Bilateral mastectomy (single tumor involving both breasts)',
-    '800': 'Mastectomy NOS (including extended radical mastectomy)',
-    '900': 'Surgery, NOS',
-    '990': 'Unknown if surgery performed',
-    # Legacy 2-digit codes (pre-2025 TCR format, for backward compatibility)
-    '20':  'Partial mastectomy / lumpectomy (local excision)',
-    '22':  'Modified radical mastectomy',
-    '24':  'Total / simple mastectomy',
-    '41':  'Local excision — margins positive or NOS',
-    '44':  'Sentinel LN biopsy only',
-    '45':  'Sentinel LN biopsy + axillary LN dissection',
-    '50':  'Radical mastectomy (legacy code)',
-    '51':  'Extended radical mastectomy (legacy code)',
-    '54':  'Subcutaneous mastectomy (legacy code)',
-    '55':  'Skin-sparing mastectomy (legacy code)',
-    '60':  'Other surgery',
-    '99':  'Unknown',
-    # Generic 3-digit codes for non-breast sites (rounded to hundreds)
-    '30':  'Partial surgical removal of primary site (legacy code)',
-    '40':  'Total surgical removal of primary site (legacy code)',
-    '70':  'Radical surgery with organ resection in continuity (legacy code)',
-    '80':  'Surgery, NOS (legacy code)',
-    '00':  'No surgery',
+    '710': 'Radical mastectomy WITHOUT removal of the contralateral breast',
+    '720': 'Radical mastectomy WITH removal of the contralateral breast',
+    '760': 'Bilateral mastectomy for a single tumour involving both breasts',
+    '800': 'Mastectomy, NOS (including extended radical mastectomy)',
+    '900': 'Surgery, NOS — surgery performed but the procedure is not known',
+    '990': 'Unknown if surgery performed; death certificate ONLY',
 }
+
+# Pre-2025 exports used 1- and 2-digit codes. They are kept so historical
+# files still decode, but they are NOT in the official 編碼範圍 and every
+# label is marked so it cannot be confused with -- or re-encoded as -- a
+# current 3-character code.
+_STYPE95_LEGACY = {
+    '0':  'No surgery (legacy 1-digit code)',
+    '00': 'No surgery (legacy 2-digit code)',
+    '20': 'Partial mastectomy / lumpectomy (legacy 2-digit code)',
+    '22': 'Modified radical mastectomy (legacy 2-digit code)',
+    '24': 'Total / simple mastectomy (legacy 2-digit code)',
+    '30': 'Partial surgical removal of primary site (legacy 2-digit code)',
+    '40': 'Total surgical removal of primary site (legacy 2-digit code)',
+    '41': 'Local excision — margins positive or NOS (legacy 2-digit code)',
+    '44': 'Sentinel LN biopsy only (legacy 2-digit code)',
+    '45': 'Sentinel LN biopsy + axillary LN dissection (legacy 2-digit code)',
+    '50': 'Radical mastectomy (legacy 2-digit code)',
+    '51': 'Extended radical mastectomy (legacy 2-digit code)',
+    '54': 'Subcutaneous mastectomy (legacy 2-digit code)',
+    '55': 'Skin-sparing mastectomy (legacy 2-digit code)',
+    '60': 'Other surgery (legacy 2-digit code)',
+    '70': 'Radical surgery with organ resection in continuity (legacy 2-digit code)',
+    '80': 'Surgery, NOS (legacy 2-digit code)',
+    '99': 'Unknown (legacy 2-digit code)',
+}
+
+# The outside-hospital field's legacy codes are NOT the same vocabulary as the
+# reporting hospital's: '51' meant "biopsy only" here and "extended radical
+# mastectomy" there. They are kept apart deliberately.
+_PRESTYPE_LEGACY = {
+    '0':  'No outside hospital surgery (legacy 1-digit code)',
+    '20': 'Partial mastectomy / lumpectomy (legacy 2-digit code)',
+    '22': 'Modified radical mastectomy (legacy 2-digit code)',
+    '24': 'Total / simple mastectomy (legacy 2-digit code)',
+    '41': 'Local excision — margins positive or NOS (legacy 2-digit code)',
+    '51': 'Biopsy only (legacy 2-digit code)',
+    '99': 'Unknown (legacy 2-digit code)',
+}
+
+# Official codes first: reverse lookup takes the first key for a given label,
+# so a submission gets the current 3-character form, never a legacy one.
+STYPE95_MAP = {**BREAST_SURGERY_MAP, **_STYPE95_LEGACY}
+PRESTYPE_MAP = {**BREAST_SURGERY_MAP, **_PRESTYPE_LEGACY}
 
 LNSCO_MAP = {
     '0': 'No regional LN procedure performed',

@@ -23,12 +23,13 @@ import pandas as pd
 import pytest
 
 from tcr_decoder.code_ranges import (
-    CODE_RANGES, LONGFORM, SUPPORTED_GROUPS, field_width, is_legal_code,
+    CODE_RANGES, LONGFORM, SUPPORTED_GROUPS, SURGERY_CODES, field_width,
+    is_legal_code,
 )
 from tcr_decoder.decoders import decode_lnexam, decode_lnpositive
 from tcr_decoder.encoders import encode_lnexam, encode_lnpositive
 from tcr_decoder.ssf_registry import _generic_ssf, get_ssf_profile
-from tcr_decoder.encoders import encode_generic_ssf
+from tcr_decoder.encoders import encode_generic_ssf, encode_structural_map
 
 # (cancer_group, ssf_key) for every verified field of every verified group
 FIELDS = [
@@ -168,6 +169,67 @@ def test_longform_structural_field_decode_is_injective(field):
             collisions.append((seen[label], code, label))
         seen[label] = code
     assert not collisions, f'{field} ({ref}): {collisions[:5]}'
+
+
+# The two node-surgery fields share one code table, and the surgery-of-primary
+# -site fields share Appendix B. Both pairs go through _map() / encode_
+# structural_map() rather than an SSF profile decoder.
+def _structural_roundtrip(codes, code_map):
+    raw = pd.Series(sorted(codes), dtype=object)
+    decoded = raw.apply(lambda v: code_map.get(v, f'Code {v}'))
+    encoded = encode_structural_map(decoded, code_map).astype(str)
+    return raw, decoded, encoded
+
+
+@pytest.mark.parametrize('field', ['PRESLNSCO', 'SLNSCO95'])
+def test_regional_node_surgery_scope_roundtrips(field):
+    from tcr_decoder.core import LNSCO_MAP
+
+    width, codes, ref = LONGFORM[field]
+    raw, decoded, encoded = _structural_roundtrip(codes, LNSCO_MAP)
+    assert not [c for c, d in zip(raw, decoded) if d.startswith('Code ')], ref
+    assert len(set(decoded)) == len(decoded), f'{field} ({ref}): duplicate labels'
+    assert list(raw) == list(encoded), ref
+    assert all(len(e) == width for e in encoded), ref
+
+
+@pytest.mark.parametrize('field', ['PRESTYPE', 'STYPE95'])
+def test_surgery_of_primary_site_roundtrips_over_appendix_b(field):
+    """PRESTYPE used to decode 0 of the 705 codes in its own 編碼範圍.
+
+    It only knew seven legacy 2-digit codes, so a current-format export
+    decoded every surgery as 'Code NNN'. STYPE95 knew 41 of them and was
+    missing every reconstruction sub-code -- including 660, which is the
+    code the manual's own worked example on p.189 assigns.
+    """
+    from tcr_decoder.core import PRESTYPE_MAP, STYPE95_MAP
+
+    code_map = PRESTYPE_MAP if field == 'PRESTYPE' else STYPE95_MAP
+    width, codes, ref = SURGERY_CODES['breast']
+    raw, decoded, encoded = _structural_roundtrip(codes, code_map)
+
+    undecoded = [c for c, d in zip(raw, decoded) if d.startswith('Code ')]
+    assert not undecoded, f'{field} ({ref}): {len(undecoded)} legal codes not decoded'
+    assert len(set(decoded)) == len(decoded), f'{field} ({ref}): duplicate labels'
+    assert list(raw) == list(encoded), ref
+    assert all(len(e) == width for e in encoded), f'{field} ({ref}): wrong width'
+
+
+def test_the_two_surgery_fields_share_one_vocabulary():
+    """They ask the same question about two facilities (Longform p.186/188)."""
+    from tcr_decoder.core import BREAST_SURGERY_MAP, PRESTYPE_MAP, STYPE95_MAP
+
+    for code, label in BREAST_SURGERY_MAP.items():
+        assert PRESTYPE_MAP[code] == label == STYPE95_MAP[code], code
+
+
+def test_legacy_surgery_codes_never_win_the_reverse_lookup():
+    """A submission must get the current 3-character code, not a legacy one."""
+    from tcr_decoder.core import BREAST_SURGERY_MAP, PRESTYPE_MAP, STYPE95_MAP
+
+    for code_map in (PRESTYPE_MAP, STYPE95_MAP):
+        labels = pd.Series(list(BREAST_SURGERY_MAP.values()))
+        assert all(len(c) == 3 for c in encode_structural_map(labels, code_map))
 
 
 def test_lnexam_sentinels_are_five_distinct_situations():
