@@ -167,6 +167,23 @@ def _print_flags(flags):
             print(f'    • {flag} ({n}×): {detail}')
 
 
+def cmd_build_validation(output_path: str, cancer_group: str = 'breast'):
+    """Build the bidirectional validation data set for one cancer group."""
+    from tcr_decoder.validation import export_validation_workbook
+
+    print(f'Building {cancer_group} validation data set -> {output_path}')
+    summary = export_validation_workbook(output_path, cancer_group=cancer_group)
+    print()
+    for key, value in summary.items():
+        print(f'  {key}: {value}')
+    failures = int(summary['欄位往返失敗筆數']) + int(summary['病例往返失敗筆數'])
+    print()
+    if failures:
+        print(f'  ✗ {failures} 筆無法無損雙向轉換 — 見 Failures 工作表')
+        sys.exit(1)
+    print('  ✓ 全部代碼與組合皆可無損雙向轉換')
+
+
 def main():
     if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
         sys.stdout.reconfigure(encoding='utf-8')
@@ -182,6 +199,8 @@ examples:
   python -m tcr_decoder --synth breast --n 100 --decode   # test with synthetic data
   python -m tcr_decoder --list-cancers                     # show all cancer groups
   python -m tcr_decoder --ssf-info colorectum              # SSF fields for CRC
+  python -m tcr_decoder --build-validation val.xlsx        # breast bidirectional validation set
+  python -m tcr_decoder --build-validation p.xlsx --cancer prostate
         """)
 
     # Mode: synth vs decode vs info
@@ -192,6 +211,11 @@ examples:
                       help='List all supported cancer groups and exit')
     mode.add_argument('--ssf-info', metavar='CANCER',
                       help='Show SSF field definitions for a cancer group')
+    mode.add_argument('--build-validation', metavar='OUT.xlsx',
+                      help='Build the bidirectional validation data set for the '
+                           '--cancer group (default breast): every legal code '
+                           'with its code-book meaning, plus pairwise-complete '
+                           'cases run through decode -> encode')
 
     # Decode mode args
     parser.add_argument('input', nargs='?', default=None,
@@ -223,7 +247,9 @@ examples:
 
     _print_banner()
 
-    if args.list_cancers:
+    if args.build_validation:
+        cmd_build_validation(args.build_validation, cancer_group=args.cancer or 'breast')
+    elif args.list_cancers:
         cmd_list_cancers()
     elif args.ssf_info:
         cmd_ssf_info(args.ssf_info)

@@ -11,6 +11,7 @@
 > - 工作3：兩個既有測試失敗都已修正（3a 改用 `warnings.simplefilter('error')`；3b 改用 `pd.api.types.is_numeric_dtype`）。
 > - 工作4：`.github/workflows/test.yml` 已新增（YAML 語法已驗證，實際 CI 執行結果仍待 push 後觀察）。
 > - 工作5：採用文件建議的「輕量處理」——未重寫 `decode_er_pr`/`encode_er_pr`，只在 `decode_er_pr` docstring 補充 Allred 雙制度說明，並新增 7 組 Allred 代碼的 pinning 測試（`test_allred_score_codes_decode_and_roundtrip`）。<1% 那一格仍標記為待人工確認，未做任何猜測性處理。
+>   - **2026-08-14 更新：<1% 這一格已確認結案**。手冊 p.123 的 Allred 對照表明列 proportion score 1（<1%）填共用碼 **120**（陰性），不使用字母碼，與現行 `decode_er_pr` 的 `'120'` 分支一致，因此不需要任何特例。對照表已抄錄於 `coding_rules/breast_coding_spec.md`。
 > - 工作6：已補上結構性欄位（AJCC/PRESTYPE/STYPE95/LNSCO）的完整 round-trip 測試；README 測試數字已更新為 950+（全綠，0 failed）。
 >
 > 目前全套測試：`python -m pytest tests/ -q` → **954 passed, 0 failed**（本文件原記載的 2 個既有失敗已修好，現在是真正全綠）。

@@ -270,8 +270,9 @@ def validate_missing_data_patterns(df: pd.DataFrame) -> List[Flag]:
         'ALK_Translocation': 'ALK translocation',
         'AFP_Level': 'AFP',
         'MSI_MMR_Status': 'MSI/MMR',
-        'PSA_Preop': 'PSA',
-        'Gleason_Score': 'Gleason score',
+        'PSA_Lab_Value': 'PSA',
+        'Gleason_Score_Biopsy': 'Gleason score (biopsy/TURP)',
+        'Gleason_Score_Prostatectomy': 'Gleason score (prostatectomy)',
     }
     dx_yr = pd.to_numeric(df.get('Diagnosis_Year', pd.Series(dtype=float)), errors='coerce')
 

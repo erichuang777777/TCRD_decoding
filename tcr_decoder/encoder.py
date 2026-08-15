@@ -46,9 +46,14 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
-from tcr_decoder.core import AJCC_MAP, PRESTYPE_MAP, STYPE95_MAP, LNSCO_MAP
+from tcr_decoder.core import AJCC_MAP, LNSCO_MAP
+from tcr_decoder.longform_codes import (
+    BEHAVIOR_MAP, LATERALITY_MAP, LONGFORM_CODE_MAPS, LVI_MAP,
+    PERINEURAL_INVASION_MAP, encode_confirmation,
+)
 from tcr_decoder.encoders import (
     batch_encode, encode_structural_map, encode_ebrt_additive, encode_lnpositive,
+    encode_lnexam, encode_surgery,
 )
 from tcr_decoder.ssf_registry import (
     apply_ssf_encode_profile, detect_cancer_group_from_series, get_ssf_profile,
@@ -60,36 +65,50 @@ logger = logging.getLogger('tcr_decoder')
 # clean-column-name -> (raw TCR field name, encoder callable)
 STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'AJCC_Edition':              ('AJCC',      lambda s: encode_structural_map(s, AJCC_MAP)),
-    'Surgery_Type_Other_Hosp':   ('PRESTYPE',  lambda s: encode_structural_map(s, PRESTYPE_MAP)),
-    'Surgery_Type_This_Hosp':    ('STYPE95',   lambda s: encode_structural_map(s, STYPE95_MAP)),
     'Regional_LN_Surgery_Other': ('PRESLNSCO', lambda s: encode_structural_map(s, LNSCO_MAP)),
     'Regional_LN_Surgery_This':  ('SLNSCO95',  lambda s: encode_structural_map(s, LNSCO_MAP)),
     'EBRT_Technique':            ('EBRT',      encode_ebrt_additive),
-    'LN_Positive':                ('LN_POSITI', encode_lnpositive),
+    'LN_Positive':               ('LN_POSITI', encode_lnpositive),
+    'LN_Examined_Status':        ('LNEXAM',    encode_lnexam),
+    'Laterality':                ('LAT95',     LATERALITY_MAP.encode),
+    'Behavior':                  ('MCODE5',    BEHAVIOR_MAP.encode),
+    'Perineural_Invasion':       ('PNI',       PERINEURAL_INVASION_MAP.encode),
+    'LVI':                       ('LVI',       LVI_MAP.encode),
+    'Chemo_Other_Hosp':          ('PREC',      LONGFORM_CODE_MAPS['PREC'][0].encode),
+    'Chemo_This_Hosp':           ('C',         LONGFORM_CODE_MAPS['C'][0].encode),
+    'Hormone_Other_Hosp':        ('PREH',      LONGFORM_CODE_MAPS['PREH'][0].encode),
+    'Hormone_This_Hosp':         ('H',         LONGFORM_CODE_MAPS['H'][0].encode),
+    'Immuno_Other_Hosp':         ('PREI',      LONGFORM_CODE_MAPS['PREI'][0].encode),
+    'Immuno_This_Hosp':          ('I',         LONGFORM_CODE_MAPS['I'][0].encode),
+    'Targeted_Other_Hosp':       ('PRETAR',    LONGFORM_CODE_MAPS['PRETAR'][0].encode),
+    'Targeted_This_Hosp':        ('TAR',       LONGFORM_CODE_MAPS['TAR'][0].encode),
+    'Other_Treatment':           ('OTH',       LONGFORM_CODE_MAPS['OTH'][0].encode),
+    'Palliative_Care':           ('PREP',      LONGFORM_CODE_MAPS['PREP'][0].encode),
+    'Radiation_Performed':       ('R',          LONGFORM_CODE_MAPS['R'][0].encode),
+    'RT_Target_Summary':         ('RTAR',       LONGFORM_CODE_MAPS['RTAR'][0].encode),
+    'RT_Modality':               ('RMOD',       LONGFORM_CODE_MAPS['RMOD'][0].encode),
+    'High_Dose_Target':          ('HTAR',       LONGFORM_CODE_MAPS['HTAR'][0].encode),
+    'Low_Dose_Target':           ('LTAR',       LONGFORM_CODE_MAPS['LTAR'][0].encode),
+    'RT_Seq_Surgery':            ('SEQRS',      LONGFORM_CODE_MAPS['SEQRS'][0].encode),
+    'RT_vs_Systemic_Seq':        ('SEQLS',      LONGFORM_CODE_MAPS['SEQLS'][0].encode),
+    'Minimally_Invasive':        ('MINS',       LONGFORM_CODE_MAPS['MINS'][0].encode),
+    'Sex':                       ('SEX',            LONGFORM_CODE_MAPS['SEX'][0].encode),
+    'Class_of_Case':             ('CLASS95',        LONGFORM_CODE_MAPS['CLASS95'][0].encode),
+    'Diag_at_Hosp':              ('CLASSOFDIAG',    LONGFORM_CODE_MAPS['CLASSOFDIAG'][0].encode),
+    'Treat_at_Hosp':             ('CLASSOFTREAT',   LONGFORM_CODE_MAPS['CLASSOFTREAT'][0].encode),
+    'Vital_Status':              ('VSTA',           LONGFORM_CODE_MAPS['VSTA'][0].encode),
+    'Recurrence_Type':           ('RETYPE95',       LONGFORM_CODE_MAPS['RETYPE95'][0].encode),
+    'Performance_Status':        ('KPSECOG',        LONGFORM_CODE_MAPS['KPSECOG'][0].encode),
 }
 
-# (cancer_group, clean_column) pairs where TCRDecoder.decode()'s full
-# pipeline OVERWRITES the SSF-profile decoder's output with its own
-# post-processing that trusts the input file's pre-existing {FIELD}_decoded
-# column (see core.py: the breast Pagets_Disease/LVI_SSF block). The
-# profile's decoder/encoder pair is internally consistent when used directly
-# via apply_ssf_profile()/apply_ssf_encode_profile(), but a `clean` DataFrame
-# coming out of the FULL TCRDecoder pipeline holds that other, unstructured
-# text instead -- there is no fixed vocabulary to invert, so TCREncoder
-# reports these as unencoded rather than attempting (and failing) to parse
-# them as if they were normal SSF-profile output.
-_SSF_PIPELINE_OVERRIDDEN = {
-    ('breast', 'Pagets_Disease'): (
-        "TCRDecoder.decode() overwrites this column with cleaned-up text "
-        "from the input file's own SSF8_decoded column, not the SSF profile's "
-        "decoder -- there is no fixed code table to invert here."
-    ),
-    ('breast', 'LVI_SSF'): (
-        "TCRDecoder.decode() overwrites this column with cleaned-up text "
-        "from the input file's own SSF9_decoded column, not the SSF profile's "
-        "decoder -- there is no fixed code table to invert here."
-    ),
-}
+# (cancer_group, clean_column) pairs whose value in a `clean` DataFrame does
+# NOT come from the SSF profile decoder, and therefore has no fixed
+# vocabulary for TCREncoder to invert. Kept as an extension point: breast
+# SSF8/SSF9 used to be listed here because TCRDecoder.decode() overwrote
+# them with text from the input file's own {FIELD}_decoded columns; they now
+# come from the profile like every other SSF field, so this is empty and all
+# ten breast SSF fields round-trip.
+_SSF_PIPELINE_OVERRIDDEN: Dict[Tuple[str, str], str] = {}
 
 
 class TCREncoder:
@@ -148,8 +167,12 @@ class TCREncoder:
             self._detected_cancer_group = self._forced_cancer_group
             self._log_msg(f'Cancer group: {self._forced_cancer_group} (forced)')
         elif 'Primary_Site_Code' in df.columns:
+            # Histology_Code carries MCODE, which is what selects the lymphoma
+            # and leukemia profiles (Cancer-SSF-Manual pp.194, 207).
+            histology = (df['Histology_Code'] if 'Histology_Code' in df.columns
+                         else None)
             self._detected_cancer_group = detect_cancer_group_from_series(
-                df['Primary_Site_Code'])
+                df['Primary_Site_Code'], histology)
             self._log_msg(f'Cancer group: {self._detected_cancer_group} (auto-detected)')
         else:
             self._detected_cancer_group = 'generic'
@@ -181,7 +204,42 @@ class TCREncoder:
             series = df[clean_col].astype(str).replace('nan', '')
             out[f'{raw_field}_raw'] = batch_encode(encoder_fn, series, on_error=on_error)
 
-        handled_clean_cols = set(ssf_input_cols) | set(STRUCTURAL_FIELD_ENCODERS)
+        # CONFER's table depends on the morphology (manual p.102/104).
+        histology = df.get('Histology_Code')
+        if 'Confirmation_Method' in df.columns:
+            if histology is None:
+                self.unencoded_columns['Confirmation_Method'] = (
+                    'Code 3 exists only for M9590-9993, and this DataFrame '
+                    'has no Histology_Code column to tell the tables apart')
+            else:
+                self._log_msg('Encoding Confirmation_Method -> CONFER_raw')
+                series = df['Confirmation_Method'].astype(str).replace('nan', '')
+                out['CONFER_raw'] = batch_encode(
+                    lambda s: encode_confirmation(s, histology), series,
+                    on_error=on_error)
+
+        # Surgery of primary site is site-specific (Appendix B), so its
+        # encoder needs the topography code alongside the label.
+        site = df.get('Primary_Site_Code')
+        for clean_col, raw_field in (('Surgery_Type_Other_Hosp', 'PRESTYPE'),
+                                     ('Surgery_Type_This_Hosp', 'STYPE95')):
+            if clean_col not in df.columns:
+                continue
+            if site is None:
+                self.unencoded_columns[clean_col] = (
+                    'Surgery codes are defined per primary site (Longform '
+                    '附錄B), and this DataFrame has no Primary_Site_Code column'
+                )
+                continue
+            self._log_msg(f'Encoding {clean_col} -> {raw_field}_raw')
+            series = df[clean_col].astype(str).replace('nan', '')
+            out[f'{raw_field}_raw'] = batch_encode(
+                lambda s: encode_surgery(s, site), series, on_error=on_error)
+
+        handled_clean_cols = (set(ssf_input_cols) | set(STRUCTURAL_FIELD_ENCODERS)
+                              | {'Surgery_Type_Other_Hosp',
+                                 'Surgery_Type_This_Hosp',
+                                 'Confirmation_Method'})
         for col in df.columns:
             if (col not in handled_clean_cols and col != 'Primary_Site_Code'
                     and col not in self.unencoded_columns):

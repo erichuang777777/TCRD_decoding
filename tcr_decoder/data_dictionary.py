@@ -34,7 +34,8 @@ COLUMN_REGISTRY: Dict[str, tuple] = {
     'Tumor_Size_mm': ('CSIZE95', 'numeric_clean', 'Tumor size in millimeters (999/888=unknown/NA)'),
     'Perineural_Invasion': ('PNI', 'mapping', 'Perineural invasion status'),
     'LVI': ('LVI', 'mapping', 'Lymphovascular invasion status'),
-    'LN_Examined': ('LNEXAM', 'numeric_clean', 'Number of regional LN examined (95-99=sentinel codes)'),
+    'LN_Examined_Status': ('LNEXAM', 'decode_lnexam', 'Regional LN examined: count, or which of the five 95-99 situations applies'),
+    'LN_Examined': ('LNEXAM', 'numeric_clean', 'Number of regional LN examined (blank when the code is one of the 95-99 sentinels)'),
     'LN_Positive': ('LN_POSITI', 'decode_lnpositive', 'LN positive count or status text'),
     'LN_Positive_Count': ('LN_POSITI', 'derived_numeric', 'Numeric LN positive count (NaN for text statuses)'),
     'AJCC_Edition': ('AJCC', 'mapping', 'AJCC Cancer Staging Edition used'),
@@ -175,13 +176,51 @@ COLUMN_REGISTRY: Dict[str, tuple] = {
 # Maps output column name → TCR codebook field number (欄位序號)
 # Source: Longform-Manual 2025, Table 1 (pp. 12-16)
 # Derived / calculated columns have no TCR field number and are omitted.
+# Columns whose 癌登欄位序號 could NOT be confirmed against the manual's own
+# numbering (tcr_decoder/longform_fields.py). The numbers below are inherited
+# from the original hand-written registry and are kept because they are more
+# useful than nothing, but they are NOT evidence. Do not cite them on a
+# submission form without checking the manual.
+#
+# Twenty other columns pointed at the wrong field entirely and have been
+# corrected: 4.4 is 申報醫院緩和照護 (not hormone therapy), 7.1 is 身高 (not
+# performance status), 5.4 is 生存狀態 (not the last-contact date).
+UNVERIFIED_FIELD_NUMBERS = frozenset({
+    'Cause_of_Death', 'Cause_of_Death_Extended',
+    'Metastasis_Site_1', 'Metastasis_Site_2', 'Metastasis_Site_3',
+    'Recurrence_Date_Extended', 'Recurrence_Type_Extended',
+    # 'Extended follow-up' (VSTA6/LCD6/RETYPE6/DIECAUSE6) is a distinct round
+    # of follow-up data collection from section 5's 'initial follow-up'
+    # fields (5.1-5.4), and the manual does not give it its own field-number
+    # block anywhere this index found -- see longform_fields.py. Reusing 5.x
+    # would be a guess, so these three plus Cancer_Status (CSTA, whose real
+    # official field this index could not identify at all) are left here
+    # rather than pointing at a number that names a different field.
+    'Cancer_Status', 'Vital_Status_Extended', 'Last_Contact_Extended',
+    # 癌症發生順序號碼 (#2.2) is "this occurrence's sequence number" (Cancer_
+    # Sequence, raw SEQ2: 1st, 2nd...), not "how many primaries this patient
+    # has" (Total_Primaries, raw SEQ1) -- related concepts, not the same
+    # field. Total_Primaries kept the shared number as a placeholder.
+    'Total_Primaries',
+    'Patient_ID',        # 1.1+1.2: composite of two official fields
+    'Survival_Years',    # derived from 5.4 and 2.5, not a reported field
+})
+# 'Minimally_Invasive' (4.1.4.1) and 'Radiation_Performed' (4.2.1.8) used to
+# be listed here: the field index missed them because their header in the
+# manual uses a full-width colon ('癌登欄位序號：4.1.4.1') instead of the '#'
+# every other field uses (scripts/index_longform_fields.py now matches both).
+# Radiation_Performed's claimed number (4.2) never existed either way -- 4.2
+# is a section heading with no code table, and 4.2.1.8 (放射治療執行狀態) is
+# the field that actually answers "was radiation given, where, or why not".
+
+
 TCR_FIELD_NUMBER: Dict[str, str] = {
     # Section 1: Basic identifiers
     'Patient_ID':                 '1.1+1.2',
     'Sex':                        '1.5',
     # Section 2: Diagnosis info
     'Age_at_Diagnosis':           '2.1',
-    'Total_Primaries':            '2.2',
+    'Total_Primaries':            '2.2',  # see UNVERIFIED_FIELD_NUMBERS
     'Cancer_Sequence':            '2.2',
     'Class_of_Case':              '2.3',
     'Diag_at_Hosp':               '2.3.1',
@@ -202,6 +241,7 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'Tumor_Size_mm':              '2.13',
     'Perineural_Invasion':        '2.13.1',
     'LVI':                        '2.13.2',
+    'LN_Examined_Status':         '2.14',
     'LN_Examined':                '2.14',
     'LN_Positive':                '2.15',
     'LN_Positive_Count':          '2.15',
@@ -234,44 +274,44 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'Regional_LN_Surgery_Other':  '4.1.6',
     'Regional_LN_Surgery_This':   '4.1.7',
     # Section 4.2: Treatment — Radiation
-    'Radiation_Performed':        '4.2',
+    'Radiation_Performed':        '4.2.1.8',
     'RT_Target_Summary':          '4.2.1.1',
     'RT_Modality':                '4.2.1.2',
     'RT_Seq_Surgery':             '4.2.1.5',
     'RT_vs_Systemic_Seq':         '4.2.1.6',
     'EBRT_Technique':             '4.2.2.1',
-    'High_Dose_cGy':              '4.2.2.4',
-    'High_Dose_Fractions':        '4.2.2.5',
-    'Low_Dose_cGy':               '4.2.2.7',
-    'Low_Dose_Fractions':         '4.2.2.8',
+    'High_Dose_cGy':              '4.2.2.2.2',
+    'High_Dose_Fractions':        '4.2.2.2.3',
+    'Low_Dose_cGy':               '4.2.2.3.2',
+    'Low_Dose_Fractions':         '4.2.2.3.3',
     # Section 4.3: Systemic therapy
-    'Chemo_This_Hosp':            '4.3',
-    'Chemo_Other_Hosp':           '4.3',
-    'Hormone_This_Hosp':          '4.4',
-    'Hormone_Other_Hosp':         '4.4',
-    'Targeted_This_Hosp':         '4.5',
-    'Targeted_Other_Hosp':        '4.5',
-    'Immuno_This_Hosp':           '4.6',
-    'Immuno_Other_Hosp':          '4.6',
+    'Chemo_This_Hosp':            '4.3.3',
+    'Chemo_Other_Hosp':           '4.3.2',
+    'Hormone_This_Hosp':          '4.3.6',
+    'Hormone_Other_Hosp':         '4.3.5',
+    'Targeted_This_Hosp':         '4.3.14',
+    'Targeted_Other_Hosp':        '4.3.13',
+    'Immuno_This_Hosp':           '4.3.9',
+    'Immuno_Other_Hosp':          '4.3.8',
     # Section 5: Follow-up
-    'Vital_Status':               '5.1',
-    'Cancer_Status':              '5.3',
-    'Last_Contact_Date':          '5.4',
-    'Recurrence_Date':            '5.5',
-    'Recurrence_Type':            '5.6',
+    'Vital_Status':               '5.4',
+    'Cancer_Status':              '5.4',  # see UNVERIFIED_FIELD_NUMBERS
+    'Last_Contact_Date':          '5.3',
+    'Recurrence_Date':            '5.1',
+    'Recurrence_Type':            '5.2',
     'Cause_of_Death':             '5.7',
-    'Vital_Status_Extended':      '5.1',
-    'Last_Contact_Extended':      '5.4',
+    'Vital_Status_Extended':      '5.1',  # see UNVERIFIED_FIELD_NUMBERS
+    'Last_Contact_Extended':      '5.4',  # see UNVERIFIED_FIELD_NUMBERS
     'Survival_Years':             '5.4+2.5',
     'Recurrence_Date_Extended':   '5.5',
     'Recurrence_Type_Extended':   '5.6',
     'Cause_of_Death_Extended':    '5.7',
     # Section 6: Physical measurements
-    'Height_cm':                  '6.1',
-    'Weight_kg':                  '6.2',
-    'Smoking':                    '6.3',
+    'Height_cm':                  '7.1',
+    'Weight_kg':                  '7.2',
+    'Smoking':                    '7.3',
     # Section 7: Performance status
-    'Performance_Status':         '7.1',
+    'Performance_Status':         '7.6',
     # Section 8: SSF fields (cancer-specific biomarkers)
     'ER_Status':                  '8.1',
     'PR_Status':                  '8.2',
@@ -294,6 +334,46 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'MSI_MMR_Status':             '8.10',
     'RAS_Mutation':               '8.6',
 }
+
+
+def _register_ssf_columns() -> int:
+    """Describe every cancer group's SSF columns, straight from the profiles.
+
+    COLUMN_REGISTRY was hand-written and only ever covered breast, so a
+    decoded lung/liver/prostate/... file produced a data dictionary with
+    blank descriptions for its ten most important columns. The SSF profiles
+    already carry the field description and the manual page it came from, and
+    code_ranges.py carries the official 編碼範圍 for the verified groups, so
+    the entries are derived rather than duplicated by hand.
+
+    Returns the number of columns registered (for tests).
+    """
+    from tcr_decoder.code_ranges import CODE_RANGES
+    from tcr_decoder.ssf_registry import _PROFILES
+
+    added = 0
+    for group, profile in _PROFILES.items():
+        if group == 'generic':
+            continue
+        ranges = CODE_RANGES.get(group, {})
+        for ssf_key, field in profile.fields.items():
+            col = field.column_name
+            number = ssf_key.replace('SSF', '')
+            # The TCR field number is worth having even for the few breast
+            # columns COLUMN_REGISTRY already describes by hand.
+            TCR_FIELD_NUMBER.setdefault(col, f'8.{number}')
+            if col in COLUMN_REGISTRY:
+                continue
+            entry = ranges.get(ssf_key)
+            source = f'{profile.site_label} {ssf_key}: {field.description}'
+            if entry:
+                source += f'（官方編碼範圍：{entry[2]}，共 {len(entry[1])} 個合法碼）'
+            COLUMN_REGISTRY[col] = (field.raw_field, 'ssf_profile', source)
+            added += 1
+    return added
+
+
+_SSF_COLUMNS_REGISTERED = _register_ssf_columns()
 
 
 def label_with_tcr_number(col: str) -> str:

@@ -41,21 +41,71 @@ class TestDetectCancerGroup:
         ('C73.9', 'thyroid'),
         ('C61',   'prostate'),
         ('C61.9', 'prostate'),
-        ('C11.0', 'nasopharynx'),
-        ('C11.9', 'nasopharynx'),
+        ('C11.0', 'head_neck'),
+        ('C11.9', 'head_neck'),
         ('C54.1', 'endometrium'),
         ('C54.9', 'endometrium'),
     ])
     def test_known_codes(self, code, expected):
         assert detect_cancer_group(code) == expected
 
-    @pytest.mark.parametrize('code', ['C99.9', 'C00.0', 'D05.1', 'X99', 'UNKNOWN'])
+    @pytest.mark.parametrize('code', ['C99.9', 'D05.1', 'X99', 'UNKNOWN'])
     def test_unknown_codes_return_generic(self, code):
         assert detect_cancer_group(code) == 'generic'
 
     @pytest.mark.parametrize('code', [None, '', np.nan, '  '])
     def test_empty_returns_generic(self, code):
         assert detect_cancer_group(code) == 'generic'
+
+
+class TestMorphologyKeyedGroups:
+    """Lymphoma and leukemia are chosen by MCODE, not by site (pp.194, 207)."""
+
+    @pytest.mark.parametrize('site,morph,expected', [
+        # Nodal and extranodal lymphomas: the site is irrelevant, and a
+        # gastric MALT lymphoma must NOT come out as a stomach cancer.
+        ('C77.9', '9680/3', 'lymphoma'),   # DLBCL, lymph node
+        ('C16.9', '9699/3', 'lymphoma'),   # MALT lymphoma of the stomach
+        ('C50.9', '9680/3', 'lymphoma'),   # primary breast lymphoma
+        ('C77.0', '9663/3', 'lymphoma'),   # Hodgkin, nodular sclerosis
+        ('C77.2', '9690/3', 'lymphoma'),   # follicular
+        # Leukemias.
+        ('C42.1', '9861/3', 'leukemia'),   # AML
+        ('C42.1', '9875/3', 'leukemia'),   # CML, the only SSF10 collector
+        ('C42.0', '9823/3', 'leukemia'),   # CLL
+        ('C42.4', '9989/3', 'leukemia'),
+    ])
+    def test_morphology_decides(self, site, morph, expected):
+        assert detect_cancer_group(site, morph) == expected
+
+    @pytest.mark.parametrize('site,expected', [
+        # M-9811-9837 is the one range the manual splits on the SITE: in
+        # marrow / blood / haematopoietic system it is a leukemia, anywhere
+        # else the same morphology is a lymphoma.
+        ('C42.0', 'leukemia'),
+        ('C42.1', 'leukemia'),
+        ('C42.4', 'leukemia'),
+        ('C42.2', 'lymphoma'),   # spleen
+        ('C77.9', 'lymphoma'),
+    ])
+    def test_m9811_9837_splits_on_the_site(self, site, expected):
+        assert detect_cancer_group(site, '9835/3') == expected
+
+    def test_a_solid_tumour_morphology_leaves_the_site_in_charge(self):
+        assert detect_cancer_group('C50.1', '8500/3') == 'breast'
+
+    def test_site_alone_cannot_reach_the_haematolymphoid_profiles(self):
+        """Without MCODE there is nothing to route on -- and we say so."""
+        assert detect_cancer_group('C77.9') == 'generic'
+
+    def test_series_detection_uses_the_morphology_column(self):
+        sites = pd.Series(['C77.9', 'C77.0', 'C16.9'])
+        morphs = pd.Series(['9680/3', '9680/3', '9699/3'])
+        assert detect_cancer_group_from_series(sites, morphs) == 'lymphoma'
+        # Same sites without the morphology: two nodal sites route nowhere and
+        # the gastric lymphoma would have been read as a stomach cancer.
+        with pytest.warns(UserWarning, match='Mixed cancer registry'):
+            assert detect_cancer_group_from_series(sites) == 'generic'
 
 
 class TestDetectCancerGroupFromSeries:
@@ -134,11 +184,19 @@ class TestGetSSFProfile:
 
     def test_prostate_ssf1_is_psa(self):
         p = get_ssf_profile('prostate')
-        assert p.fields['SSF1'].column_name == 'PSA_Preop'
+        assert p.fields['SSF1'].column_name == 'PSA_Lab_Value'
 
-    def test_prostate_ssf2_is_gleason(self):
+    def test_prostate_ssf_fields_follow_the_manual(self):
+        """Cancer-SSF-Manual pp.175-191. SSF2/SSF4 are Gleason PATTERNS
+        (biopsy vs prostatectomy), SSF3/SSF5 the matching SCORES, SSF6/SSF7
+        the biopsy core counts, SSF8 the clinical T staging method."""
         p = get_ssf_profile('prostate')
-        assert p.fields['SSF2'].column_name == 'Gleason_Score'
+        assert [p.fields[f'SSF{i}'].column_name for i in range(2, 9)] == [
+            'Gleason_Pattern_Biopsy', 'Gleason_Score_Biopsy',
+            'Gleason_Pattern_Prostatectomy', 'Gleason_Score_Prostatectomy',
+            'Biopsy_Cores_Examined', 'Biopsy_Cores_Positive',
+            'Clinical_T_Staging_Method',
+        ]
 
     def test_unknown_group_returns_generic(self):
         p = get_ssf_profile('unknown_cancer')
@@ -430,26 +488,45 @@ class TestApplySSFProfile:
 
     # ── Prostate ────────────────────────────────────────────────────────────
 
-    def test_prostate_psa_undetectable(self):
-        df = self._make_df({'SSF1_raw': [0]})
+    def test_prostate_psa_lowest_code(self):
+        # 001 = <=0.1 ng/mL; the official range starts at 001 (no 000).
+        df = self._make_df({'SSF1_raw': ['001']})
         result = apply_ssf_profile(df, 'prostate')
-        assert 'undetectable' in result['PSA_Preop'].iloc[0].lower()
+        assert result['PSA_Lab_Value'].iloc[0] == 'PSA <=0.1 ng/mL'
 
     def test_prostate_psa_value(self):
-        # stored as ×10 → 45 = 4.5 ng/mL
-        df = self._make_df({'SSF1_raw': [45]})
+        # stored as ×10 → 045 = 4.5 ng/mL
+        df = self._make_df({'SSF1_raw': ['045']})
         result = apply_ssf_profile(df, 'prostate')
-        assert '4.5' in result['PSA_Preop'].iloc[0]
+        assert '4.5' in result['PSA_Lab_Value'].iloc[0]
 
-    def test_prostate_gleason_6(self):
-        df = self._make_df({'SSF2_raw': [6]})
+    def test_prostate_gleason_pattern_biopsy(self):
+        # 034 = primary 3 + secondary 4, NOT "score 34"
+        df = self._make_df({'SSF2_raw': ['034']})
         result = apply_ssf_profile(df, 'prostate')
-        assert 'Grade Group 1' in result['Gleason_Score'].iloc[0]
+        label = result['Gleason_Pattern_Biopsy'].iloc[0]
+        assert 'Gleason 3+4' in label and 'primary 3' in label
 
-    def test_prostate_gleason_9(self):
-        df = self._make_df({'SSF2_raw': [9]})
+    def test_prostate_gleason_score_biopsy(self):
+        df = self._make_df({'SSF3_raw': ['006']})
         result = apply_ssf_profile(df, 'prostate')
-        assert 'Grade Group 5' in result['Gleason_Score'].iloc[0]
+        assert 'Grade Group 1' in result['Gleason_Score_Biopsy'].iloc[0]
+
+    def test_prostate_gleason_score_prostatectomy(self):
+        df = self._make_df({'SSF5_raw': ['009']})
+        result = apply_ssf_profile(df, 'prostate')
+        assert 'Grade Group 5' in result['Gleason_Score_Prostatectomy'].iloc[0]
+
+    def test_prostate_biopsy_cores(self):
+        df = self._make_df({'SSF6_raw': ['012'], 'SSF7_raw': ['003']})
+        result = apply_ssf_profile(df, 'prostate')
+        assert result['Biopsy_Cores_Examined'].iloc[0] == '12 core(s) examined'
+        assert result['Biopsy_Cores_Positive'].iloc[0] == '3 core(s) positive'
+
+    def test_prostate_clinical_t_staging_method(self):
+        df = self._make_df({'SSF8_raw': ['030']})
+        result = apply_ssf_profile(df, 'prostate')
+        assert 'Digital rectal exam plus TRUS' in result['Clinical_T_Staging_Method'].iloc[0]
 
     # ── Generic sentinel codes ───────────────────────────────────────────────
 

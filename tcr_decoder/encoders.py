@@ -52,6 +52,18 @@ def _clean(v) -> str:
     return '' if s.lower() == 'nan' else s
 
 
+# Inverse of decoders._unlisted_code(): a sentinel-shaped code outside a
+# field's official range is decoded as 'Unlisted code 888' rather than being
+# left as a bare number in a clinical column, so the encode side recovers the
+# original code from that label.
+_UNLISTED_RE = re.compile(r'^Unlisted code (\S+)$')
+
+
+def _reverse_unlisted(v: str) -> str:
+    m = _UNLISTED_RE.match(v)
+    return m.group(1) if m else v
+
+
 def batch_encode(enc_fn, series: pd.Series, on_error: str = 'raise') -> pd.Series:
     """Run enc_fn(series) with uniform on_error semantics.
 
@@ -144,16 +156,18 @@ def encode_er_pr(series: pd.Series, receptor: str) -> pd.Series:
             # (150 -> 'S50') instead of preserving it -- return the value
             # unmodified so the round trip doesn't fabricate a new number.
             return f'{intensity_code[m.group(1)]}{pct}'
+        # SSF1/SSF2 are 3-character fields (欄位長度：3, range 000-100), so a
+        # percentage is written back zero-padded: 70% -> '070', 0% -> '000'.
         m = positive_re.match(v)
         if m:
-            return m.group(1)
+            return m.group(1).zfill(3)
         m = negative_re.match(v)
         if m and m.group(1) == '0':
-            return '0'
+            return '000'
         # decode_er_pr() itself falls back to a bare passthrough for
         # anything it doesn't recognize (e.g. an out-of-range percentage) --
         # mirror that leniency rather than raising.
-        return v
+        return _reverse_unlisted(v)
 
     return series.apply(_encode)
 
@@ -165,7 +179,6 @@ def encode_er_pr(series: pd.Series, receptor: str) -> pd.Series:
 def encode_ki67(series: pd.Series) -> pd.Series:
     """Inverse of decode_ki67(). Codebook: Cancer-SSF-Manual (breast), p.150-151."""
     special_rev = {
-        'Not applicable (conversion)': '888',
         'Not applicable (Phyllodes/Sarcoma)': '988',
         'Tested, percentage unknown': '998',
         'Unknown': '999',
@@ -179,15 +192,16 @@ def encode_ki67(series: pd.Series) -> pd.Series:
             return ''
         if v in special_rev:
             return special_rev[v]
+        # 3-character field (欄位長度：3, range 000-100): 25% -> '025'.
         m = categorized_re.match(v)
         if m:
-            return m.group(1)
+            return m.group(1).zfill(3)
         m = fractional_re.match(v)
         if m:
             pct = float(m.group(1))
             return f'A{round(pct * 10):02d}'
         # decode_ki67() falls back to a bare passthrough for anything else.
-        return v
+        return _reverse_unlisted(v)
 
     return series.apply(_encode)
 
@@ -214,7 +228,7 @@ def encode_her2(series: pd.Series) -> pd.Series:
             return _HER2_REVERSE[v]
         # decode_her2() falls back to a bare passthrough for any code not in
         # HER2_MAP (even after zfill(3)).
-        return v
+        return _reverse_unlisted(v)
 
     return series.apply(_encode)
 
@@ -226,11 +240,14 @@ def encode_her2(series: pd.Series) -> pd.Series:
 def encode_nottingham(series: pd.Series) -> pd.Series:
     """Inverse of decode_nottingham(). Codebook: Cancer-SSF-Manual (breast), p.140-141.
 
-    Canonicalizes a scored grade to the plain single-digit score (3-9) per
-    coding_rules/breast_coding_spec.md, and a grade-only label to 110/120/130.
+    Emits the official 3-digit code: a BR score N becomes '0N0' (score 6 ->
+    '060'), matching the codebook's range 030,040,050,060,070,080,090,
+    110,120,130,999. A bare '6' is NOT a valid TCR code -- writing one back
+    into a registry submission would be rejected -- so a decoded "Score 6"
+    always re-encodes as '060' even if the source file happened to hold '6'.
+    A grade-only label encodes to 110/120/130.
     """
     special_rev = {
-        'Not applicable (conversion)': '888',
         'Not applicable': '988',
         'Unknown': '999',
     }
@@ -247,12 +264,12 @@ def encode_nottingham(series: pd.Series) -> pd.Series:
             return special_rev[v]
         m = scored_re.match(v)
         if m:
-            return m.group(1)
+            return f'0{m.group(1)}0'
         m = grade_only_re.match(v)
         if m:
             return grade_only_code[m.group(1)]
         # decode_nottingham() falls back to a bare passthrough otherwise.
-        return v
+        return _reverse_unlisted(v)
 
     return series.apply(_encode)
 
@@ -277,7 +294,7 @@ def encode_ssf3_neoadj(series: pd.Series) -> pd.Series:
         if v in _SSF3_NEOADJ_REVERSE:
             return _SSF3_NEOADJ_REVERSE[v]
         # decode_ssf3_neoadj() falls back to a bare passthrough otherwise.
-        return v
+        return _reverse_unlisted(v)
 
     return series.apply(_encode)
 
@@ -289,12 +306,14 @@ def encode_ssf3_neoadj(series: pd.Series) -> pd.Series:
 def encode_sentinel(series: pd.Series, kind: str) -> pd.Series:
     """Inverse of decode_sentinel(). kind: 'examined' or 'positive'."""
     special_rev = {
-        'Not applicable (conversion)': '888',
-        'Not applicable (no SLN biopsy)': '988',
-        'Sentinel LN biopsy performed; no lymph node tissue found or count unknown': '996',
+        ('Not applicable (no SLN surgery, post-neoadjuvant SLN, '
+         'or unknown whether performed)'): '988',
+        ('Sentinel LN biopsy performed; count unknown or no lymph '
+         'node tissue found in the specimen'): '996',
         'Unknown': '999',
     }
-    zero_label = 'None positive' if kind == 'positive' else 'None examined'
+    zero_label = ('None positive (or ITC-only involvement)' if kind == 'positive'
+                  else 'No sentinel LN surgery performed')
     node_re = re.compile(rf'^(\d+) node\(s\) {re.escape(kind)}$')
 
     def _encode(v):
@@ -303,14 +322,15 @@ def encode_sentinel(series: pd.Series, kind: str) -> pd.Series:
             return ''
         if v in special_rev:
             return special_rev[v]
+        # 3-character field (欄位長度：3, range 000-089): 5 nodes -> '005'.
         if v == zero_label:
-            return '0'
+            return '000'
         m = node_re.match(v)
         if m:
-            return m.group(1)
+            return m.group(1).zfill(3)
         # decode_sentinel() falls back to a bare passthrough otherwise
         # (e.g. an out-of-range count like '99').
-        return v
+        return _reverse_unlisted(v)
 
     return series.apply(_encode)
 
@@ -318,9 +338,10 @@ def encode_sentinel(series: pd.Series, kind: str) -> pd.Series:
 def encode_lnpositive(series: pd.Series) -> pd.Series:
     """Inverse of decode_lnpositive()."""
     special_rev = {
-        'Positive LN, count not applicable': '95',
-        'Positive LN, count not specified': '97',
-        'Unknown': '99',
+        'Positive by aspiration/core biopsy only (nodes not surgically removed)': '95',
+        'Positive LN present, count not specified': '97',
+        'No nodes removed/examined, or no lymph node tissue found (clinical assessment only)': '98',
+        'Unknown / not applicable / not documented': '99',
     }
 
     def _encode(v):
@@ -331,9 +352,62 @@ def encode_lnpositive(series: pd.Series) -> pd.Series:
             return special_rev[v]
         # decode_lnpositive() passes any other value through unchanged
         # (actual counts, and anything it doesn't otherwise recognize).
+        # LN_POSITI is a 2-character field (Longform-Manual p.130), so a
+        # count is written back zero-padded: 5 -> '05'.
+        if v.isdigit() and len(v) < 2:
+            return v.zfill(2)
         return v
 
     return series.apply(_encode)
+
+
+def encode_lnexam(series: pd.Series) -> pd.Series:
+    """Inverse of decode_lnexam(). Codebook: Longform-Manual p.127-129."""
+    from tcr_decoder.decoders import decode_lnexam
+
+    probe = pd.Series(['00', '90', '95', '96', '97', '98', '99'])
+    special_rev = {label: code
+                   for code, label in zip(probe, decode_lnexam(probe))}
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in special_rev:
+            return special_rev[v]
+        # LNEXAM is a 2-character field, so a plain count is written back
+        # zero-padded: 5 -> '05'.
+        if v.isdigit() and len(v) < 2:
+            return v.zfill(2)
+        return v
+
+    return series.apply(_encode)
+
+
+def encode_surgery(series: pd.Series, tcode1_series: pd.Series) -> pd.Series:
+    """Inverse of decode_surgery(). Needs the site for the same reason."""
+    from tcr_decoder.core import LEGACY_SURGERY_CODES
+    from tcr_decoder.surgery_codes import surgery_codes
+
+    legacy_rev = {label: code for code, label in LEGACY_SURGERY_CODES.items()}
+    tcode1 = tcode1_series.reindex(series.index)
+
+    def _encode(v, site):
+        v = _clean(v)
+        if not v:
+            return ''
+        for code, label in surgery_codes(site).items():
+            if label == v:
+                return code
+        if v in legacy_rev:
+            return legacy_rev[v]
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        raise KeyError(f'Unrecognized surgery label for {site!r}: {v!r}')
+
+    return pd.Series([_encode(v, s) for v, s in zip(series, tcode1)],
+                     index=series.index)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -399,10 +473,10 @@ def encode_lung_ssf5_mediastinal(series: pd.Series) -> pd.Series:
         if v == 'Unknown / not documented; stations dissected but location unclear':
             return '999'
         if v == 'No mediastinal LN sampling or dissection':
-            return '0'
+            return '000'
         m = station_re.match(v)
         if m:
-            return m.group(1)
+            return m.group(1).zfill(3)
         m = re.match(r'^Code (\d+)$', v)
         if m:
             return m.group(1)
@@ -475,10 +549,10 @@ def encode_lung_ssf9_nodules(series: pd.Series) -> pd.Series:
         if v == 'Unknown / not documented':
             return '999'
         if v == '>20 tumor nodules':
-            return '21'
+            return '021'
         m = count_re.match(v)
         if m:
-            return m.group(1)
+            return m.group(1).zfill(3)
         m = re.match(r'^Code (\d+)$', v)
         if m:
             return m.group(1)
@@ -504,14 +578,14 @@ def encode_cea_lab_value(series: pd.Series) -> pd.Series:
         if v == 'CEA unknown / not tested':
             return '999'
         if v == 'CEA <=0.1 ng/mL':
-            return '1'
+            return '001'
         if v == 'CEA >=98.7 ng/mL':
             return '987'
         m = value_re.match(v)
         if m:
             code = round(float(m.group(1)) * 10)
             if 2 <= code <= 986:
-                return str(code)
+                return str(code).zfill(3)
         m = re.match(r'^CEA code (\d+)$', v)
         if m:
             return m.group(1)
@@ -580,13 +654,13 @@ def encode_liver_afp(series: pd.Series) -> pd.Series:
             return f'A{int(m.group(1)):02d}'
         m = tens_10x_re.match(v)
         if m:
-            return str(round(int(m.group(1)) / 10))
+            return str(round(int(m.group(1)) / 10)).zfill(3)
         m = hundreds_re.match(v)
         if m:
-            return str(round(int(m.group(1)) / 10))
+            return str(round(int(m.group(1)) / 10)).zfill(3)
         m = thousands_re.match(v)
         if m:
-            return str(round(int(m.group(1)) / 10))
+            return str(round(int(m.group(1)) / 10)).zfill(3)
         m = re.match(r'^AFP code (\d+)$', v)
         if m:
             return m.group(1)
@@ -609,14 +683,14 @@ def encode_lab_value_10x(series: pd.Series, analyte: str, unit: str) -> pd.Serie
         if v == f'{analyte} unknown / not tested':
             return '999'
         if v == f'{analyte} <=0.1 {unit}':
-            return '1'
+            return '001'
         if v == f'{analyte} >=98.7 {unit}':
             return '987'
         m = value_re.match(v)
         if m:
             code = round(float(m.group(1)) * 10)
             if 2 <= code <= 986:
-                return str(code)
+                return str(code).zfill(3)
         m = re.match(rf'^{re.escape(analyte)} code (\d+)$', v)
         if m:
             return m.group(1)
@@ -644,7 +718,7 @@ def encode_liver_inr(series: pd.Series) -> pd.Series:
         if m:
             code = round(float(m.group(1)) * 10)
             if 1 <= code <= 60:
-                return str(code)
+                return str(code).zfill(3)
         m = re.match(r'^INR code (\d+)$', v)
         if m:
             return m.group(1)
@@ -671,9 +745,10 @@ def encode_psa(series: pd.Series) -> pd.Series:
         v = _clean(v)
         if not v:
             return ''
-        if v == 'PSA <0.1 ng/mL (undetectable)':
-            return '0'
-        if v == 'Not applicable':
+        # 3-character field (欄位長度：3, range 001-999 with no 000).
+        if v == 'PSA <=0.1 ng/mL':
+            return '001'
+        if v == 'Not applicable (first course at another hospital, no lab value)':
             return '988'
         if v == 'PSA >=8000 ng/mL':
             return '998'
@@ -683,22 +758,432 @@ def encode_psa(series: pd.Series) -> pd.Series:
             return '980'
         m = tier_re.match(v)
         if m and f'{m.group(1)}-{m.group(2)}' in tier_reverse:
-            return str(tier_reverse[f'{m.group(1)}-{m.group(2)}'])
+            return str(tier_reverse[f'{m.group(1)}-{m.group(2)}']).zfill(3)
         m = thousands_re.match(v)
         if m:
             k = int(m.group(1)) // 1000
             if k in thousands_reverse:
-                return str(thousands_reverse[k])
+                return str(thousands_reverse[k]).zfill(3)
         m = value_re.match(v)
         if m:
             code = round(float(m.group(1)) * 10)
-            if 1 <= code <= 979:
-                return str(code)
+            if 2 <= code <= 979:
+                return str(code).zfill(3)
         m = re.match(r'^Code (\d+)$', v)
         if m:
             return m.group(1)
         # Bare passthrough: decode's own fallback for non-numeric input.
-        return v
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Head & neck (Cancer-SSF-Manual pp.3-29)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def encode_hn_node_size(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_hn_node_size() (head & neck SSF1)."""
+    from tcr_decoder.ssf_registry import _decode_hn_node_size
+
+    reverse = _reverse_from_decoder(
+        _decode_hn_node_size,
+        ['000', '987', '988', '990', '991', '992', '993', '994', '995', '996',
+         '997', '999'])
+    value_re = re.compile(r'^Involved node (\d+) mm$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m and 1 <= int(m.group(1)) <= 986:
+            return m.group(1).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_hn_levels(series: pd.Series, ssf_key: str) -> pd.Series:
+    """Inverse of _decode_hn_levels() (head & neck SSF3-SSF6)."""
+    from tcr_decoder.ssf_registry import _HN_LEVEL_REGIONS, _HN_LEVEL_STATUS
+
+    regions = _HN_LEVEL_REGIONS[ssf_key]
+    status_code = {label: code for code, label in _HN_LEVEL_STATUS.items()}
+    none_label = f'{regions[0]}/{regions[1]}/{regions[2]}: none involved (N0)'
+    na_label = ('Not applicable (examined or treated at another hospital '
+                'with no data available)')
+    unknown_label = ('Nodal status for these regions unknown / not documented / '
+                     'not assessable')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v == none_label:
+            return '000'
+        if v == na_label:
+            return '988'
+        if v == unknown_label:
+            return '999'
+        parts = v.split('; ')
+        if len(parts) == 3:
+            digits = ''
+            for region, part in zip(regions, parts):
+                prefix = f'{region}: '
+                if not part.startswith(prefix):
+                    digits = ''
+                    break
+                code = status_code.get(part[len(prefix):])
+                if code is None:
+                    digits = ''
+                    break
+                digits += code
+            if len(digits) == 3:
+                return digits
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_hn_tumor_depth(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_hn_tumor_depth() (head & neck SSF7)."""
+    from tcr_decoder.ssf_registry import _decode_hn_tumor_depth
+
+    reverse = _reverse_from_decoder(
+        _decode_hn_tumor_depth,
+        ['000', '980', '987', '988', '990', '997', '998', '999'])
+    value_re = re.compile(r'^Tumour depth (\d+\.\d) mm$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m:
+            code = round(float(m.group(1)) * 10)
+            if 1 <= code <= 979:
+                return str(code).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_hn_margin(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_hn_margin() (head & neck SSF8)."""
+    from tcr_decoder.ssf_registry import _decode_hn_margin
+
+    reverse = _reverse_from_decoder(
+        _decode_hn_margin, ['000', '980', '987', '988', '990', '998', '999'])
+    value_re = re.compile(r'^Margin negative, (\d+\.\d) mm$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m:
+            code = round(float(m.group(1)) * 10)
+            if 1 <= code <= 979:
+                return str(code).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_hn_ene_clinical(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_hn_ene_clinical() (head & neck SSF9)."""
+    from tcr_decoder.ssf_registry import _HN_ENE_DETAIL, _HN_ENE_FINAL
+
+    final_code = {label: code for code, label in _HN_ENE_FINAL.items()}
+    detail_code = {label: code for code, label in _HN_ENE_DETAIL.items()}
+    composite_re = re.compile(
+        r'^Overall: (.+); imaging: (.+); physical exam: (.+)$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v == 'Not applicable (clinical N category is cN0)':
+            return '988'
+        if v == ('Not applicable (treated at another hospital with no data, '
+                 'or diagnosed only after surgery)'):
+            return '998'
+        m = composite_re.match(v)
+        if m:
+            first = final_code.get(m.group(1))
+            second = detail_code.get(m.group(2))
+            third = detail_code.get(m.group(3))
+            if None not in (first, second, third):
+                return f'{first}{second}{third}'
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_hn_ene_pathological(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_hn_ene_pathological() (head & neck SSF10)."""
+    from tcr_decoder.ssf_registry import _decode_hn_ene_pathological
+
+    reverse = _reverse_from_decoder(
+        _decode_hn_ene_pathological,
+        ['000', '199', '210', '299', '399', '988', '998', '999'])
+    le2_re = re.compile(r'^Pathological ENE <=2 mm, measured (\d+\.\d) mm$')
+    gt2_re = re.compile(r'^Pathological ENE >2 mm, measured (\d+\.\d) mm$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = le2_re.match(v)
+        if m:
+            dist = round(float(m.group(1)) * 10)
+            if 1 <= dist <= 20:
+                return f'1{dist:02d}'
+        m = gt2_re.match(v)
+        if m:
+            dist = round(float(m.group(1)) * 10)
+            if 21 <= dist <= 98:
+                return f'2{dist:02d}'
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cervix / stomach / colorectum fields with their own code table
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _reverse_from_decoder(decoder, codes) -> dict:
+    """Build a label -> code table by running the decoder over its own codes.
+
+    Keeps a bespoke encoder from drifting away from its decoder: the mapping
+    is derived, never typed out twice.
+    """
+    labels = decoder(pd.Series(list(codes), dtype=object))
+    reverse = {}
+    for code, label in zip(codes, labels):
+        reverse.setdefault(label, code)
+    return reverse
+
+
+def encode_scc_lab_value(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_scc_lab_value() (cervix SSF1). 3-character field."""
+    value_re = re.compile(r'^SCC antigen (\d+(?:\.\d+)?) ng/mL$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v == 'Not applicable (treated at another hospital, no lab value)':
+            return '988'
+        if v == 'SCC antigen unknown / not tested':
+            return '999'
+        if v == 'SCC antigen <=0.1 ng/mL':
+            return '001'
+        if v == 'SCC antigen >=98.7 ng/mL':
+            return '987'
+        m = value_re.match(v)
+        if m:
+            code = round(float(m.group(1)) * 10)
+            if 2 <= code <= 986:
+                return str(code).zfill(3)
+        m = re.match(r'^SCC antigen code (\d+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_tumor_depth(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_tumor_depth() (stomach SSF4). 3-character field."""
+    from tcr_decoder.ssf_registry import _decode_tumor_depth
+
+    reverse = _reverse_from_decoder(
+        _decode_tumor_depth, ['000', '980', '988', '998', '999'])
+    value_re = re.compile(r'^Tumour depth (\d+(?:\.\d+)?) mm$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m:
+            code = round(float(m.group(1)) * 10)
+            if 1 <= code <= 979:
+                return str(code).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_crm(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_crm() (colorectum SSF4). 3-character field."""
+    from tcr_decoder.ssf_registry import _decode_crm
+
+    reverse = _reverse_from_decoder(
+        _decode_crm, ['980', '988', '990', '991', '992', '993', '994', '995',
+                      '996', '999'])
+    value_re = re.compile(r'^CRM (\d+(?:\.\d+)?) mm$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m:
+            code = round(float(m.group(1)) * 10)
+            if 0 <= code <= 979:
+                return str(code).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_distance_to_anus(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_distance_to_anus() (rectum SSF9). 3 characters."""
+    from tcr_decoder.ssf_registry import _decode_distance_to_anus
+
+    reverse = _reverse_from_decoder(
+        _decode_distance_to_anus, ['000', '988', '991', '992', '993', '999'])
+    value_re = re.compile(r'^(\d+) mm from the anus$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m and 1 <= int(m.group(1)) <= 150:
+            return m.group(1).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Prostate: Gleason patterns (SSF2/SSF4), Gleason score (SSF3/SSF5),
+# biopsy cores (SSF6/SSF7)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def encode_gleason_patterns(series: pd.Series, specimen: str) -> pd.Series:
+    """Inverse of _decode_gleason_patterns(). 3-character field."""
+    from tcr_decoder.ssf_registry import _decode_gleason_patterns
+
+    # Build the reverse table from the decoder itself so the two can never
+    # drift: every legal code decoded once, then indexed by its label.
+    codes = ([f'{p}{s}' for p in range(1, 6) for s in list(range(1, 6)) + [9]]
+             + ['099', '988', '999'])
+    codes = [c.zfill(3) for c in codes]
+    labels = _decode_gleason_patterns(pd.Series(codes, dtype=object), specimen)
+    reverse = {}
+    for code, label in zip(codes, labels):
+        reverse.setdefault(label, code)
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_gleason_score(series: pd.Series, specimen: str) -> pd.Series:
+    """Inverse of _decode_gleason_score(). 3-character field."""
+    from tcr_decoder.ssf_registry import _decode_gleason_score
+
+    codes = [f'{i:03d}' for i in list(range(2, 11)) + [988, 999]]
+    labels = _decode_gleason_score(pd.Series(codes, dtype=object), specimen)
+    reverse = {}
+    for code, label in zip(codes, labels):
+        reverse.setdefault(label, code)
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_biopsy_cores(series: pd.Series, kind: str) -> pd.Series:
+    """Inverse of _decode_biopsy_cores(). 3-character field."""
+    from tcr_decoder.ssf_registry import _decode_biopsy_cores
+
+    sentinels = [988, 999] + ([998, 0] if kind == 'positive' else [])
+    codes = [f'{i:03d}' for i in sentinels]
+    labels = _decode_biopsy_cores(pd.Series(codes, dtype=object), kind)
+    reverse = {}
+    for code, label in zip(codes, labels):
+        reverse.setdefault(label, code)
+    count_re = re.compile(rf'^(\d+) core\(s\) {re.escape(kind)}$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = count_re.match(v)
+        if m:
+            return m.group(1).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
 
     return series.apply(_encode)
 
@@ -737,3 +1222,145 @@ def encode_generic_ssf(series: pd.Series, unit: str = '') -> pd.Series:
         return v
 
     return series.apply(_encode)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pancreas / ovary fields with a scaled or composite code
+# ─────────────────────────────────────────────────────────────────────────────
+
+def encode_ca19_9(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_ca19_9() (pancreas SSF3). 3-character field."""
+    from tcr_decoder.ssf_registry import _decode_ca19_9
+
+    tier_codes = ['000', '001', '988', '999'] + [
+        str(i).zfill(3) for i in list(range(980, 998)) + [989, 990]]
+    reverse = _reverse_from_decoder(_decode_ca19_9, sorted(set(tier_codes)))
+    value_re = re.compile(r'^CA 19-9 (\d+\.\d) U/mL$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m:
+            code = round(float(m.group(1)) * 10)
+            if 2 <= code <= 979:
+                return str(code).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_mitotic_count(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_mitotic_count() (pancreas SSF5)."""
+    from tcr_decoder.ssf_registry import _decode_mitotic_count
+
+    reverse = _reverse_from_decoder(
+        _decode_mitotic_count, ['110', '120', '130', '988', '999'])
+    count_re = re.compile(r'^(\d+) mitoses per 10 HPF \(per 2 mm2\)$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = count_re.match(v)
+        if m and 0 <= int(m.group(1)) <= 21:
+            return m.group(1).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_hba1c(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_hba1c() (pancreas SSF6)."""
+    from tcr_decoder.ssf_registry import _decode_hba1c
+
+    reverse = _reverse_from_decoder(
+        _decode_hba1c,
+        ['988', '999'] + [f'{h}{v:02d}' for h in '01'
+                          for v in list(range(1, 95)) + [95, 96, 97, 98, 99]])
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_ca125(series: pd.Series, timing: str) -> pd.Series:
+    """Inverse of _decode_ca125() (ovary SSF1/SSF2)."""
+    from tcr_decoder.ssf_registry import _decode_ca125
+
+    tiers = [str(i) for i in list(range(901, 911)) + [920, 930, 931, 988, 999]]
+    reverse = _reverse_from_decoder(
+        lambda s: _decode_ca125(s, timing), tiers)
+    when = 'before treatment' if timing == 'pre' else 'lowest after treatment'
+    value_re = re.compile(rf'^CA-125 {re.escape(when)}: (\d+) U/mL$')
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in reverse:
+            return reverse[v]
+        m = value_re.match(v)
+        if m and 1 <= int(m.group(1)) <= 900:
+            return m.group(1).zfill(3)
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def _encode_composite(series: pd.Series, head_map: dict, tail_map: dict,
+                      head_width: int) -> pd.Series:
+    """Inverse of a "head label; tail label" composite SSF decoder."""
+    head_code = {label: code for code, label in head_map.items()}
+    tail_code = {label: code for code, label in tail_map.items()}
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if '; ' in v:
+            head, tail = v.split('; ', 1)
+            h, t = head_code.get(head), tail_code.get(tail)
+            if h is not None and t is not None:
+                return f'{h}{t}'
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_lym_esr_ips(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_lym_esr_ips() (lymphoma SSF10, manual p.205-206)."""
+    from tcr_decoder.ssf_registry import _LYM_ESR_HEAD, _LYM_IPS_TAIL
+    return _encode_composite(series, _LYM_ESR_HEAD, _LYM_IPS_TAIL, 2)
+
+
+def encode_leu_mrd(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_leu_mrd() (leukemia SSF10, manual p.221-222)."""
+    from tcr_decoder.ssf_registry import _LEU_MRD_HEAD, _LEU_MRD_TAIL
+    return _encode_composite(series, _LEU_MRD_HEAD, _LEU_MRD_TAIL, 2)

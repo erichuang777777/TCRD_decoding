@@ -274,9 +274,10 @@ class TestDecodeEBRTAdditive:
 
 class TestDecodeSentinel:
 
-    def test_zero_examined_is_none(self):
+    def test_zero_examined_is_no_sln_surgery(self):
+        # Codebook p.137: SSF4 000 = no sentinel-node surgery performed.
         result = decode_sentinel(s([0]), 'examined')
-        assert 'None' in result.iloc[0] or '0' in result.iloc[0]
+        assert result.iloc[0] == 'No sentinel LN surgery performed'
 
     def test_count_examined(self):
         result = decode_sentinel(s([3]), 'examined')

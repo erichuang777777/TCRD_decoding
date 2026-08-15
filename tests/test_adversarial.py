@@ -214,10 +214,12 @@ class TestBoundaryValues:
         assert 'Grade 2' in result
 
     # Sentinel lymph node
-    def test_sentinel_examined_0_is_none_or_zero(self):
-        """Code 0 = no sentinel nodes examined → 'None examined' or '0 node(s)'."""
+    def test_sentinel_examined_0_is_no_sln_surgery(self):
+        """Codebook p.137: SSF4 code 000 = no sentinel-node surgery was
+        performed at all (not "zero nodes found")."""
         result = decode_sentinel(s(0), kind='examined').iloc[0]
-        assert 'None' in result or '0' in result
+        assert result == 'No sentinel LN surgery performed'
+        assert decode_sentinel(s('000'), kind='examined').iloc[0] == result
 
     def test_sentinel_examined_5(self):
         assert '5' in decode_sentinel(s(5), kind='examined').iloc[0]
@@ -322,7 +324,7 @@ class TestICDO3EdgeCases:
         ('C73.9', 'thyroid'),
         ('C53.0', 'cervix'),
         ('C16.9', 'stomach'),
-        ('C11.0', 'nasopharynx'),
+        ('C11.0', 'head_neck'),
         ('C54.1', 'endometrium'),
     ])
     def test_known_codes(self, code, expected):
@@ -330,7 +332,7 @@ class TestICDO3EdgeCases:
 
     # Unknown → generic
     @pytest.mark.parametrize('code', [
-        'C00.0', 'C99.9', 'C40.0', 'X99.0',
+        'C99.9', 'C40.0', 'X99.0',
     ])
     def test_unknown_code_returns_generic(self, code):
         assert detect_cancer_group(code) == 'generic'
@@ -377,7 +379,7 @@ class TestICDO3EdgeCases:
 
 ALL_GROUPS = [
     'breast', 'lung', 'colorectum', 'liver', 'cervix',
-    'stomach', 'thyroid', 'prostate', 'nasopharynx', 'endometrium', 'generic',
+    'stomach', 'thyroid', 'prostate', 'head_neck', 'endometrium', 'generic',
 ]
 
 
@@ -575,11 +577,11 @@ class TestCLISmoke:
         out = self._capture(cmd_list_cancers)
         assert 'lung' in out.lower()
 
-    def test_list_cancers_has_all_11_groups(self):
+    def test_list_cancers_has_every_group(self):
         from tcr_decoder.__main__ import cmd_list_cancers
         out = self._capture(cmd_list_cancers)
         for grp in ['breast', 'lung', 'colorectum', 'liver', 'prostate',
-                    'thyroid', 'cervix', 'stomach', 'nasopharynx', 'endometrium', 'generic']:
+                    'thyroid', 'cervix', 'stomach', 'head_neck', 'endometrium', 'generic']:
             assert grp in out.lower(), f'Missing group in --list-cancers output: {grp}'
 
     def test_ssf_info_breast_shows_er_pr(self):

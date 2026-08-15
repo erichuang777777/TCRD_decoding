@@ -2,20 +2,27 @@
 TCRDecoder — Main orchestrator for Taiwan Cancer Registry decoding pipeline.
 
 Supports ANY cancer type registered in the Taiwan Cancer Registry (TCR).
-SSF1-10 are automatically decoded using the correct cancer-specific interpretation
-based on the ICD-O-3 topography code (TCODE1).
+SSF1-10 are automatically decoded using the correct cancer-specific
+interpretation, routed by the ICD-O-3 topography code (TCODE1) -- except for
+lymphoma and leukemia, which the code book routes by MORPHOLOGY (MCODE).
 
 Supported cancer groups with full custom SSF decoders:
-    breast      (C50) — ER/PR/HER2/Ki67/Nottingham
+    breast      (C50) — ER/PR/HER2/Ki67/Nottingham/sentinel nodes
     lung        (C34) — nodules/VPI/ECOG/effusion/mediastinal LN/EGFR/ALK
-    colorectum  (C18-C21) — CEA/MSI/KRAS/peritoneal mets
-    liver       (C22) — AFP/HBV/HCV/Child-Pugh/cirrhosis
+    colorectum  (C18-C21) — CEA/CRM/BRAF/RAS/obstruction/perforation/MSI
+    liver       (C22) — AFP/HBV/HCV/Child-Pugh/Ishak fibrosis
     cervix      (C53) — SCC antigen value/status
-    stomach     (C16) — CEA/H.pylori/tumor depth/LVI
-    thyroid     (C73) — focality/extrathyroidal/BRAF
-    prostate    (C61) — PSA/Gleason/cores/extraprostatic
-    nasopharynx (C11) — EBV serology/plasma EBV DNA
-    endometrium (C54) — MMR/POLE/p53/FIGO molecular
+    stomach     (C16) — CEA/H.pylori/tumour depth/LVI
+    thyroid     (C73) — not an SSF-collecting site: every field is 988
+    prostate    (C61) — PSA/Gleason patterns and score/biopsy cores/cT method
+    endometrium (C54) — ER/PR/FIGO grade/POLE/MSI/p53
+    head_neck   (C00-C14, C30-C32, C76.0) — node size/ECE/levels/depth/ENE
+    esophagus   (C15) — PET-CT/MIE/tumour regression grade
+    pancreas    (C25) — CEA/CA 19-9/Ki-67/mitotic count/HbA1c
+    ovary       (C56) — CA-125 pre/post therapy/residual tumour
+    bladder     (C67) — WHO-ISUP grade/nodal ENE/muscularis propria
+    lymphoma    (by MCODE) — HIV/B symptoms/IPI/FLIPI/HTLV-1/CMV/HBV/HCV/ESR-IPS
+    leukemia    (by MCODE) — karyotype/molecular/induction response/GVHD/MRD
     generic     (any) — numeric passthrough for unknown sites
 
 Usage:
@@ -51,11 +58,16 @@ from tcr_decoder.utils import (
 from tcr_decoder.decoders import (
     decode_er_pr, decode_ki67, decode_her2, decode_nottingham,
     decode_ssf3_neoadj, decode_ebrt_additive, decode_sentinel,
-    decode_lnpositive, decode_cause_of_death, decode_smoking_triplet,
+    decode_lnexam, decode_lnpositive, decode_cause_of_death, decode_smoking_triplet,
+    decode_surgery,
 )
 from tcr_decoder.ssf_registry import (
     detect_cancer_group_from_series, apply_ssf_profile,
     get_ssf_profile, list_supported_cancers,
+)
+from tcr_decoder.longform_codes import (
+    BEHAVIOR_MAP, LATERALITY_MAP, LONGFORM_CODE_MAPS, LVI_MAP,
+    PERINEURAL_INVASION_MAP, decode_confirmation,
 )
 from tcr_decoder.validators import run_all_validators
 from tcr_decoder.input_validator import validate_input
@@ -86,80 +98,38 @@ AJCC_MAP = {
     '08':    'AJCC 8th Edition (2018)',
 }
 
-PRESTYPE_MAP = {
-    '0':   'No outside hospital surgery',
-    '20':  'Partial mastectomy / lumpectomy',
-    '22':  'Modified radical mastectomy',
-    '24':  'Total / simple mastectomy',
-    '41':  'Local excision — margins positive or NOS',
-    '51':  'Biopsy only',
-    '99':  'Unknown',
+# Surgery of primary site (外院 PRESTYPE #4.1.3, 申報醫院 STYPE95 #4.1.4).
+#
+# Appendix B defines these codes PER PRIMARY SITE -- 660 is an implant
+# reconstruction in the breast and a hemicolectomy elsewhere -- so there is no
+# single dict to hand _map(). Both fields go through decode_surgery(), which
+# picks the table from TCODE1. See tcr_decoder/surgery_codes.py (generated
+# from the manual by scripts/generate_surgery_codes.py).
+#
+# Pre-2025 exports used 1- and 2-character codes. They are kept so historical
+# files still decode, but they are NOT in the official 編碼範圍 and each label
+# says so, which also stops encode() from ever emitting one.
+LEGACY_SURGERY_CODES = {
+    '0':  'No surgery (legacy 1-digit code)',
+    '00': 'No surgery (legacy 2-digit code)',
+    '20': 'Partial mastectomy / lumpectomy (legacy 2-digit code)',
+    '22': 'Modified radical mastectomy (legacy 2-digit code)',
+    '24': 'Total / simple mastectomy (legacy 2-digit code)',
+    '30': 'Partial surgical removal of primary site (legacy 2-digit code)',
+    '40': 'Total surgical removal of primary site (legacy 2-digit code)',
+    '41': 'Local excision — margins positive or NOS (legacy 2-digit code)',
+    '44': 'Sentinel LN biopsy only (legacy 2-digit code)',
+    '45': 'Sentinel LN biopsy + axillary LN dissection (legacy 2-digit code)',
+    '50': 'Radical mastectomy (legacy 2-digit code)',
+    '51': 'Extended radical mastectomy (legacy 2-digit code)',
+    '54': 'Subcutaneous mastectomy (legacy 2-digit code)',
+    '55': 'Skin-sparing mastectomy (legacy 2-digit code)',
+    '60': 'Other surgery (legacy 2-digit code)',
+    '70': 'Radical surgery with organ resection in continuity (legacy 2-digit code)',
+    '80': 'Surgery, NOS (legacy 2-digit code)',
+    '99': 'Unknown (legacy 2-digit code)',
 }
 
-STYPE95_MAP = {
-    # 2025 TCR 3-digit codes (official codebook Appendix B, breast C50)
-    '0':   'No surgery',
-    '000': 'No surgery',
-    '200': 'Partial mastectomy (lumpectomy / segmental / quadrantectomy)',
-    '210': 'Diagnostic excision — no pre-op biopsy proven diagnosis',
-    '215': 'Excisional biopsy for atypia',
-    '240': 'Re-excision of margins (partial mastectomy)',
-    '290': 'Central lumpectomy — nipple areolar complex removed',
-    '300': 'Skin-sparing mastectomy',
-    '310': 'Skin-sparing mastectomy WITHOUT contralateral removal',
-    '311': 'Skin-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
-    '312': 'Skin-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
-    '313': 'Skin-sparing mastectomy WITHOUT contralateral, implant reconstruction',
-    '314': 'Skin-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-    '320': 'Skin-sparing mastectomy WITH contralateral removal',
-    '321': 'Skin-sparing mastectomy WITH contralateral, reconstruction NOS',
-    '322': 'Skin-sparing mastectomy WITH contralateral, tissue reconstruction',
-    '323': 'Skin-sparing mastectomy WITH contralateral, implant reconstruction',
-    '324': 'Skin-sparing mastectomy WITH contralateral, combined reconstruction',
-    '400': 'Nipple-sparing mastectomy',
-    '410': 'Nipple-sparing mastectomy WITHOUT contralateral removal',
-    '411': 'Nipple-sparing mastectomy WITHOUT contralateral, reconstruction NOS',
-    '412': 'Nipple-sparing mastectomy WITHOUT contralateral, tissue reconstruction',
-    '413': 'Nipple-sparing mastectomy WITHOUT contralateral, implant reconstruction',
-    '414': 'Nipple-sparing mastectomy WITHOUT contralateral, combined reconstruction',
-    '420': 'Nipple-sparing mastectomy WITH contralateral removal',
-    '421': 'Nipple-sparing mastectomy WITH contralateral, reconstruction NOS',
-    '422': 'Nipple-sparing mastectomy WITH contralateral, tissue reconstruction',
-    '423': 'Nipple-sparing mastectomy WITH contralateral, implant reconstruction',
-    '424': 'Nipple-sparing mastectomy WITH contralateral, combined reconstruction',
-    '500': 'Areolar-sparing mastectomy',
-    '510': 'Areolar-sparing mastectomy WITHOUT contralateral removal',
-    '520': 'Areolar-sparing mastectomy WITH contralateral removal',
-    '600': 'Total (simple) mastectomy',
-    '610': 'Total mastectomy WITHOUT contralateral removal',
-    '620': 'Total mastectomy WITH contralateral removal',
-    '700': 'Radical mastectomy, NOS',
-    '710': 'Radical mastectomy WITHOUT contralateral removal',
-    '720': 'Radical mastectomy WITH contralateral removal',
-    '760': 'Bilateral mastectomy (single tumor involving both breasts)',
-    '800': 'Mastectomy NOS (including extended radical mastectomy)',
-    '900': 'Surgery, NOS',
-    '990': 'Unknown if surgery performed',
-    # Legacy 2-digit codes (pre-2025 TCR format, for backward compatibility)
-    '20':  'Partial mastectomy / lumpectomy (local excision)',
-    '22':  'Modified radical mastectomy',
-    '24':  'Total / simple mastectomy',
-    '41':  'Local excision — margins positive or NOS',
-    '44':  'Sentinel LN biopsy only',
-    '45':  'Sentinel LN biopsy + axillary LN dissection',
-    '50':  'Radical mastectomy (legacy code)',
-    '51':  'Extended radical mastectomy (legacy code)',
-    '54':  'Subcutaneous mastectomy (legacy code)',
-    '55':  'Skin-sparing mastectomy (legacy code)',
-    '60':  'Other surgery',
-    '99':  'Unknown',
-    # Generic 3-digit codes for non-breast sites (rounded to hundreds)
-    '30':  'Partial surgical removal of primary site (legacy code)',
-    '40':  'Total surgical removal of primary site (legacy code)',
-    '70':  'Radical surgery with organ resection in continuity (legacy code)',
-    '80':  'Surgery, NOS (legacy code)',
-    '00':  'No surgery',
-}
 
 LNSCO_MAP = {
     '0': 'No regional LN procedure performed',
@@ -253,20 +223,40 @@ class TCRDecoder:
                 f'Pass sheet_name=... to TCRDecoder to select a different sheet.'
             )
 
-        # Preserve PK/patient IDs as strings to avoid leading-zero loss
-        # (e.g. '0001234' becoming the integer 1234 on read-back).  All ID
-        # columns that commonly suffer from this are forced to `str` dtype.
-        _id_dtypes = {
-            col: str
-            for col in ('PK_raw', 'PK_decoded', 'PK',
-                        'IDNUM_raw', 'IDNUM_decoded', 'IDNUM')
-        }
+        # Read every code column as text. TCR codes are FIXED-WIDTH and their
+        # leading zeros carry meaning -- HER2 '000' (IHC 0, staining 0%) is a
+        # different code from the legacy 1-digit '0' (staining % not
+        # described, i.e. 100), and '004' (Ultralow) is not '4' at all. Left
+        # to pandas' type inference a column of digit strings becomes int64
+        # and every leading zero is lost before any decoder sees it. The same
+        # applies to PK/patient IDs ('0001234' -> 1234).
+        #
+        # The column names aren't known until the header is read, so read the
+        # header alone first and build the dtype map from it.
+        _text_dtypes = {}
+        try:
+            _header = pd.read_excel(
+                str(self.input_path), sheet_name=self.sheet_name,
+                engine='openpyxl', nrows=0,
+            )
+            _text_dtypes = {
+                col: str for col in _header.columns
+                if isinstance(col, str)
+                and (col.endswith('_raw') or col.endswith('_decoded')
+                     or col in ('PK', 'IDNUM'))
+            }
+        except Exception:  # pragma: no cover - fall back to inference
+            _text_dtypes = {
+                col: str
+                for col in ('PK_raw', 'PK_decoded', 'PK',
+                            'IDNUM_raw', 'IDNUM_decoded', 'IDNUM')
+            }
         try:
             self._raw_df = pd.read_excel(
                 str(self.input_path),
                 sheet_name=self.sheet_name,
                 engine='openpyxl',
-                dtype=_id_dtypes,
+                dtype=_text_dtypes,
             )
         except TypeError:
             # Fallback for engines that reject the dtype argument
@@ -361,7 +351,12 @@ class TCRDecoder:
         else:
             tcode1_col = 'TCODE1_raw' if 'TCODE1_raw' in df.columns else None
             if tcode1_col:
-                self._detected_cancer_group = detect_cancer_group_from_series(df[tcode1_col])
+                # Lymphoma and leukemia are defined by histology, not by site
+                # (Cancer-SSF-Manual pp.194, 207), so MCODE has to travel with
+                # TCODE1 or a nodal lymphoma would be read as its site's cancer.
+                mcode = df['MCODE_raw'] if 'MCODE_raw' in df.columns else None
+                self._detected_cancer_group = detect_cancer_group_from_series(
+                    df[tcode1_col], mcode)
             else:
                 self._detected_cancer_group = 'generic'
             ssf_profile = get_ssf_profile(self._detected_cancer_group)
@@ -370,7 +365,8 @@ class TCRDecoder:
 
         # ── Demographics ──────────────────────────────────
         out['Patient_ID']          = self._raw('PK')
-        out['Sex']                 = en(self._dec('SEX'))
+        out['Sex']                     = LONGFORM_CODE_MAPS['SEX'][0].decode(
+            self._raw('SEX'))
         out['Age_at_Diagnosis']    = clean_numeric(self._raw('AGE'), unknown_vals={'999', '9999'})
         out['Diagnosis_Year']      = self._raw('DX_YEAR')
         out['Date_of_Diagnosis']   = clean_date(self._raw('DXDATE'))
@@ -382,21 +378,29 @@ class TCRDecoder:
         # ── Tumour Characteristics ────────────────────────
         out['Primary_Site_Code']   = self._raw('TCODE1')
         out['Primary_Site']        = en(self._dec('TCODE1'))
-        out['Laterality']          = en(self._dec('LAT95'))
+        out['Laterality']          = LATERALITY_MAP.decode(self._raw('LAT95'))
         out['Histology_Code']      = self._raw('MCODE')
         out['Histology']           = self._dec('MCODE').apply(
             lambda v: clean_text(re.sub(r'^\d+:\s*', '', str(v))))
-        out['Behavior']            = en(self._dec('MCODE5'))
+        out['Behavior']            = BEHAVIOR_MAP.decode(self._raw('MCODE5'))
         out['Grade_Pathologic']    = en(self._dec('MCODE6'))
         out['Grade_Clinical']      = en(self._dec('MCODE6C'))
-        out['Confirmation_Method'] = en(self._dec('CONFER'))
+        # CONFER has two tables and code 3 exists only for M9590-9993, so
+        # the morphology has to travel with it (manual p.102/104).
+        out['Confirmation_Method'] = decode_confirmation(
+            self._raw('CONFER'), self._raw('MCODE'))
         out['Tumor_Size_mm']       = clean_numeric(
             self._raw('CSIZE95'), unknown_vals={'999', '9999', '888', '8888'})
-        out['Perineural_Invasion'] = en(self._dec('PNI'))
-        out['LVI']                 = en(self._dec('LVI'))
+        out['Perineural_Invasion'] = PERINEURAL_INVASION_MAP.decode(self._raw('PNI'))
+        out['LVI']                 = LVI_MAP.decode(self._raw('LVI'))
+        # 95-99 are five distinct situations (Longform-Manual p.129), not one
+        # "unknown": treating them as such lost four of them and made the
+        # field un-encodable. The text column keeps them; the numeric column
+        # holds the count when there is one.
+        _ln_exam_decoded = decode_lnexam(self._raw('LNEXAM'))
+        out['LN_Examined_Status']  = _ln_exam_decoded
         out['LN_Examined']         = pd.to_numeric(
-            clean_numeric(self._raw('LNEXAM'),
-                         unknown_vals={'95', '96', '97', '98', '99', '999'}),
+            _ln_exam_decoded.where(_ln_exam_decoded.str.isdigit()),
             errors='coerce').astype('Int64')
         _ln_pos_decoded = decode_lnpositive(self._raw('LN_POSITI'))
         out['LN_Positive']         = _ln_pos_decoded
@@ -472,14 +476,20 @@ class TCRDecoder:
         # ── Surgery ───────────────────────────────────────
         out['Surgery_Performed'] = en(self._dec('S'))
         out['Surgery_Date']      = clean_date(self._raw('FSDATE'))
-        out['Surgery_Type_Other_Hosp'] = self._map('PRESTYPE', PRESTYPE_MAP)
-        out['Surgery_Type_This_Hosp'] = self._map('STYPE95', STYPE95_MAP)
+        _tcode1 = self._raw('TCODE1')
+        out['Surgery_Type_Other_Hosp'] = decode_surgery(
+            self._raw('PRESTYPE'), _tcode1)
+        out['Surgery_Type_This_Hosp'] = decode_surgery(
+            self._raw('STYPE95'), _tcode1)
         _surg_this = ~out['Surgery_Type_This_Hosp'].str.contains(
-            'No surgery|Unknown', na=True, case=False)
+            'No surgery|Unknown|autopsy ONLY|death certificate',
+            na=True, case=False)
         _surg_other = ~out['Surgery_Type_Other_Hosp'].str.contains(
-            'No outside|Unknown|No surgery', na=True, case=False)
+            'No outside|Unknown|No surgery|autopsy ONLY|death certificate',
+            na=True, case=False)
         out['Any_Surgery'] = np.where(_surg_this | _surg_other, 'Yes', 'No')
-        out['Minimally_Invasive']  = en(self._dec('MINS'))
+        out['Minimally_Invasive']      = LONGFORM_CODE_MAPS['MINS'][0].decode(
+            self._raw('MINS'))
         out['Surgical_Margin']     = en(self._dec('MARG95'))
         out['Surgical_Margin_mm']  = clean_numeric(
             self._raw('MARGDIS'), unknown_vals={'990', '999', '988', '9999'})
@@ -490,32 +500,49 @@ class TCRDecoder:
         # other cancers→ cancer-specific column names).
 
         # ── Radiation ─────────────────────────────────────
-        out['Radiation_Performed'] = en(self._dec('R'))
-        out['RT_Target_Summary']   = en(self._dec('RTAR'))
-        out['RT_Modality']         = en(self._dec('RMOD'))
+        out['Radiation_Performed']     = LONGFORM_CODE_MAPS['R'][0].decode(
+            self._raw('R'))
+        out['RT_Target_Summary']       = LONGFORM_CODE_MAPS['RTAR'][0].decode(
+            self._raw('RTAR'))
+        out['RT_Modality']             = LONGFORM_CODE_MAPS['RMOD'][0].decode(
+            self._raw('RMOD'))
         out['EBRT_Technique']      = decode_ebrt_additive(self._raw('EBRT'))
-        out['High_Dose_Target']    = en(self._dec('HTAR'))
+        out['High_Dose_Target']        = LONGFORM_CODE_MAPS['HTAR'][0].decode(
+            self._raw('HTAR'))
         out['High_Dose_cGy']       = clean_numeric(self._raw('HDOSE'), unknown_vals={'0', '99999'})
         out['High_Dose_Fractions'] = clean_numeric(self._raw('HNO'), unknown_vals={'0', '99'})
-        out['Low_Dose_Target']     = en(self._dec('LTAR'))
+        out['Low_Dose_Target']         = LONGFORM_CODE_MAPS['LTAR'][0].decode(
+            self._raw('LTAR'))
         out['Low_Dose_cGy']        = clean_numeric(self._raw('LDOSE'), unknown_vals={'0', '99999'})
         out['Low_Dose_Fractions']  = clean_numeric(self._raw('LNO'), unknown_vals={'0', '99'})
-        out['RT_Seq_Surgery']      = en(self._dec('SEQRS'))
-        out['RT_vs_Systemic_Seq']  = en(self._dec('SEQLS'))
+        out['RT_Seq_Surgery']          = LONGFORM_CODE_MAPS['SEQRS'][0].decode(
+            self._raw('SEQRS'))
+        out['RT_vs_Systemic_Seq']      = LONGFORM_CODE_MAPS['SEQLS'][0].decode(
+            self._raw('SEQLS'))
 
         # ── Systemic Therapy ──────────────────────────────
-        out['Chemo_Other_Hosp']    = en(self._dec('PREC'))
-        out['Chemo_This_Hosp']     = en(self._dec('C'))
-        out['Hormone_Other_Hosp']  = en(self._dec('PREH'))
-        out['Hormone_This_Hosp']   = en(self._dec('H'))
-        out['Immuno_Other_Hosp']   = en(self._dec('PREI'))
-        out['Immuno_This_Hosp']    = en(self._dec('I'))
+        out['Chemo_Other_Hosp']        = LONGFORM_CODE_MAPS['PREC'][0].decode(
+            self._raw('PREC'))
+        out['Chemo_This_Hosp']         = LONGFORM_CODE_MAPS['C'][0].decode(
+            self._raw('C'))
+        out['Hormone_Other_Hosp']      = LONGFORM_CODE_MAPS['PREH'][0].decode(
+            self._raw('PREH'))
+        out['Hormone_This_Hosp']       = LONGFORM_CODE_MAPS['H'][0].decode(
+            self._raw('H'))
+        out['Immuno_Other_Hosp']       = LONGFORM_CODE_MAPS['PREI'][0].decode(
+            self._raw('PREI'))
+        out['Immuno_This_Hosp']        = LONGFORM_CODE_MAPS['I'][0].decode(
+            self._raw('I'))
         out['Stem_Cell_Other_Hosp'] = en(self._dec('PREB'))
         out['Stem_Cell_This_Hosp'] = en(self._dec('B'))
-        out['Targeted_Other_Hosp'] = en(self._dec('PRETAR'))
-        out['Targeted_This_Hosp']  = en(self._dec('TAR'))
-        out['Other_Treatment']     = en(self._dec('OTH'))
-        out['Palliative_Care']     = en(self._dec('PREP'))
+        out['Targeted_Other_Hosp']     = LONGFORM_CODE_MAPS['PRETAR'][0].decode(
+            self._raw('PRETAR'))
+        out['Targeted_This_Hosp']      = LONGFORM_CODE_MAPS['TAR'][0].decode(
+            self._raw('TAR'))
+        out['Other_Treatment']         = LONGFORM_CODE_MAPS['OTH'][0].decode(
+            self._raw('OTH'))
+        out['Palliative_Care']         = LONGFORM_CODE_MAPS['PREP'][0].decode(
+            self._raw('PREP'))
         out['Active_Surveillance'] = en(self._dec('WATCHWAITING'))
 
         # ── Biomarkers (SSF1-10) — cancer-type-aware ─────────────────────────
@@ -540,25 +567,27 @@ class TCRDecoder:
             if col_name in _ssf_decoded.columns:
                 out[col_name] = _ssf_decoded[col_name]
 
-        # Breast-specific post-processing for SSF8/SSF9 (still use mapped decoded values)
-        if _active_group == 'breast':
-            if 'Pagets_Disease' in out.columns:
-                out['Pagets_Disease'] = en(self._dec('SSF8')).str.replace(
-                    r'^Paget\s+', '', regex=True).apply(
-                    lambda x: x[0].upper() + x[1:] if len(x) > 1 else x.upper())
-            if 'LVI_SSF' in out.columns:
-                out['LVI_SSF'] = en(self._dec('SSF9')).str.capitalize()
+        # SSF8/SSF9 for breast used to be overwritten here with cleaned-up
+        # text from the input file's own SSF8_decoded/SSF9_decoded columns.
+        # That made those two columns the only SSF fields NOT produced by the
+        # profile decoder, so they had no fixed vocabulary to invert and
+        # TCREncoder had to report them as un-encodable. The profile's
+        # _PAGET_MAP/_LVI_BREAST_MAP decode the same raw codes straight from
+        # the codebook, so the profile output is now used for all 10 SSF
+        # fields and the breast round trip is complete.
 
         # Sentinel LN: for non-breast cancers that don't use SSF4/SSF5 for sentinel LN,
         # these will already be in out under their cancer-specific column names.
         # For breast, overwrite with the specific sentinel decoder (already applied via profile).
 
         # ── Outcomes ──────────────────────────────────────
-        out['Vital_Status']         = en(self._dec('VSTA'))
+        out['Vital_Status']            = LONGFORM_CODE_MAPS['VSTA'][0].decode(
+            self._raw('VSTA'))
         out['Cancer_Status']        = en(self._dec('CSTA'))
         out['Last_Contact_Date']    = clean_date(self._raw('LCD'))
         out['Recurrence_Date']      = clean_date(self._raw('REDATE'))
-        out['Recurrence_Type']      = en(self._dec('RETYPE95'))
+        out['Recurrence_Type']         = LONGFORM_CODE_MAPS['RETYPE95'][0].decode(
+            self._raw('RETYPE95'))
         out['Cause_of_Death']       = self._decode_cod(self._dec('DIECAUSE'), out['Vital_Status'])
         out['Vital_Status_Extended'] = en(self._dec('VSTA6'))
         out['Last_Contact_Extended'] = clean_date(self._raw('LCD6'))
@@ -583,10 +612,14 @@ class TCRDecoder:
         # ── Misc ──────────────────────────────────────────
         out['Height_cm']           = clean_numeric(self._raw('HEIGHT'), unknown_vals={'999', '9999'})
         out['Weight_kg']           = clean_numeric(self._raw('WEIGHT'), unknown_vals={'999', '9999'})
-        out['Performance_Status']  = en(self._dec('KPSECOG'))
-        out['Class_of_Case']       = en(self._dec('CLASS95'))
-        out['Diag_at_Hosp']        = en(self._dec('CLASSOFDIAG'))
-        out['Treat_at_Hosp']       = en(self._dec('CLASSOFTREAT'))
+        out['Performance_Status']      = LONGFORM_CODE_MAPS['KPSECOG'][0].decode(
+            self._raw('KPSECOG'))
+        out['Class_of_Case']           = LONGFORM_CODE_MAPS['CLASS95'][0].decode(
+            self._raw('CLASS95'))
+        out['Diag_at_Hosp']            = LONGFORM_CODE_MAPS['CLASSOFDIAG'][0].decode(
+            self._raw('CLASSOFDIAG'))
+        out['Treat_at_Hosp']           = LONGFORM_CODE_MAPS['CLASSOFTREAT'][0].decode(
+            self._raw('CLASSOFTREAT'))
         # Flag patients where treatment data is incomplete (Dx & Tx elsewhere)
         out['Treatment_Data_Incomplete'] = out['Class_of_Case'].str.contains(
             'all Tx elsewhere|Tx elsewhere', na=False, case=False)

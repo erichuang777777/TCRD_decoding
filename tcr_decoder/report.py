@@ -190,8 +190,10 @@ def _section_tumour(df: pd.DataFrame) -> pd.DataFrame:
         ('EGFR_Mutation',        'EGFR Mutation'),
         ('ALK_Translocation',    'ALK Translocation'),
         ('MSI_Status',           'MSI Status'),
-        ('Gleason_Score',        'Gleason Score'),
-        ('PSA_Level',            'PSA Level'),
+        ('Gleason_Score_Biopsy', 'Gleason Score (biopsy/TURP)'),
+        ('Gleason_Score_Prostatectomy', 'Gleason Score (prostatectomy)'),
+        ('Gleason_Pattern_Biopsy', 'Gleason Pattern (biopsy/TURP)'),
+        ('PSA_Lab_Value',        'PSA Lab Value'),
         ('AFP_Level',            'AFP Level'),
     ]
     for col, label in biomarkers:

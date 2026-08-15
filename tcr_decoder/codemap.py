@@ -28,11 +28,18 @@ class CodeMap:
         Prefix used by decode() for an unmapped code: ``'{fallback} {code}'``.
         encode() recognizes and reverses this exact fallback format too, so
         round-tripping an unmapped code's decoded text still recovers it.
+    width : int
+        Official field width (欄位長度) in characters. When > 0, encode()
+        zero-pads to it, so a field the codebook defines as 3 characters
+        gets '010' rather than '10' -- a registry submission is fixed-width
+        and a short code is not a valid code. 0 (default) means "don't pad",
+        for fields whose width has not been confirmed against the manual.
     """
 
-    def __init__(self, mapping: Dict[int, str], fallback: str = 'Code'):
+    def __init__(self, mapping: Dict[int, str], fallback: str = 'Code', width: int = 0):
         self.mapping: Dict[int, str] = dict(mapping)
         self.fallback = fallback
+        self.width = width
         # label -> code. First occurrence wins when two codes share a label
         # (list the canonical/lowest code first in the source mapping).
         self.reverse: Dict[str, int] = {}
@@ -61,12 +68,20 @@ class CodeMap:
         if not s or s.lower() == 'nan':
             return ''
         if s in self.reverse:
-            return str(self.reverse[s])
+            code = self.reverse[s]
+            # A negative sentinel (e.g. RMOD's -9/-1, manual p.212) is never
+            # padded past its sign in the printed 編碼範圍, even in a field
+            # wider than the sentinel itself -- zfill would turn -1 into
+            # '-01' for a 3-character field, a code the manual never lists.
+            return str(code) if code < 0 else str(code).zfill(self.width)
         prefix = f'{self.fallback} '
         if s.startswith(prefix):
             rest = s[len(prefix):]
             try:
                 int(rest)
+                # An unmapped code is returned exactly as decode() received
+                # it, padding included -- re-padding here would rewrite a
+                # code this map never claimed to understand.
                 return rest
             except ValueError:
                 pass

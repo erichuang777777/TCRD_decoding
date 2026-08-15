@@ -84,92 +84,112 @@ class _BreastFields:
     MCODE_CHOICES = ['8500', '8520', '8575', '8070', '8522', '8480']
     MCODE_P       = [0.65,   0.10,   0.08,   0.07,   0.05,   0.05]
 
-    # ER (SSF1): 0-100=%, 120=negative, 888=converted, 999=unknown
+    # Every breast SSF field is 3 characters wide and has an explicit
+    # 編碼範圍 in the Cancer-SSF-Manual (see tcr_decoder/code_ranges.py).
+    # These generators emit ONLY codes from those ranges, as the zero-padded
+    # strings a real registry export contains -- synthetic data that used
+    # out-of-range values (SSF3 '0', SSF4 '99', SSF8 '1'/'2'/'9') exercised
+    # the decoders' leniency paths instead of the real code tables.
+
+    # ER (SSF1): 000-100=%, 110/111/120/121, 888=converted, 988, 999
     @staticmethod
     def ssf1(rng):
         r = rng.random()
-        if r < 0.65:   return int(rng.integers(50, 100))  # Positive (50-99%)
-        if r < 0.73:   return int(rng.integers(1, 50))    # Low positive (1-49%)
-        if r < 0.85:   return 120                          # Negative
-        if r < 0.88:   return 888                          # Converted
-        return 999
+        if r < 0.65:   return f'{int(rng.integers(50, 100)):03d}'  # Positive 50-99%
+        if r < 0.73:   return f'{int(rng.integers(1, 50)):03d}'    # Low positive
+        if r < 0.85:   return '120'                                 # Negative
+        if r < 0.88:   return '888'                                 # Converted
+        return '999'
 
     # PR (SSF2)
     @staticmethod
     def ssf2(rng):
         r = rng.random()
-        if r < 0.55:   return int(rng.integers(30, 100))
-        if r < 0.65:   return int(rng.integers(1, 30))
-        if r < 0.82:   return 120
-        if r < 0.86:   return 888
-        return 999
+        if r < 0.55:   return f'{int(rng.integers(30, 100)):03d}'
+        if r < 0.65:   return f'{int(rng.integers(1, 30)):03d}'
+        if r < 0.82:   return '120'
+        if r < 0.86:   return '888'
+        return '999'
 
-    # Neoadjuvant (SSF3): 0=no neoadj, 10=cCR, 11=pCR, 20-25=partial, 988=NA
+    # Neoadjuvant (SSF3): 010=cCR, 011=pCR, 020=PR, 030=SD, 040=PD,
+    # 988=no neoadjuvant therapy / no surgery, 990=shrank (degree NOS), 999
     @staticmethod
     def ssf3(rng):
         r = rng.random()
-        if r < 0.60:  return 0
-        if r < 0.70:  return 988
-        if r < 0.78:  return int(rng.choice([20, 21, 22, 23, 24, 25]))
-        if r < 0.88:  return 10
-        return 11
+        if r < 0.60:  return '988'
+        if r < 0.68:  return '020'
+        if r < 0.72:  return '030'
+        if r < 0.76:  return '040'
+        if r < 0.80:  return '990'
+        if r < 0.90:  return '010'
+        return '011'
 
-    # Sentinel LN examined (SSF4): 0=none, 1-10=count, 99=unknown
+    # Sentinel LN examined (SSF4): 000=no SLN surgery, 001-089=count,
+    # 988=N/A, 996=performed but count unknown, 999=unknown
     @staticmethod
     def ssf4(rng):
         r = rng.random()
-        if r < 0.10:  return 0
-        if r < 0.85:  return int(rng.integers(1, 8))
-        return 99
+        if r < 0.10:  return '000'
+        if r < 0.85:  return f'{int(rng.integers(1, 8)):03d}'
+        if r < 0.93:  return '988'
+        if r < 0.97:  return '996'
+        return '999'
 
-    # Sentinel LN positive (SSF5): 0=none, 1-N=count, 99=unknown
+    # Sentinel LN positive (SSF5): same range as SSF4
     @staticmethod
     def ssf5(ssf4_val, rng):
-        if ssf4_val == 0:   return 0
-        if ssf4_val == 99:  return 99
+        if ssf4_val in ('000', '988', '996', '999'):
+            return '000' if ssf4_val == '000' else ssf4_val
+        examined = int(ssf4_val)
         r = rng.random()
-        if r < 0.60:  return 0
-        return int(rng.integers(1, max(2, ssf4_val + 1)))
+        if r < 0.60:  return '000'
+        return f'{int(rng.integers(1, max(2, examined + 1))):03d}'
 
-    # Nottingham (SSF6): 30-90=score×10, 110/120/130=grade only, 999=unknown
+    # Nottingham (SSF6): 030-090=score×10, 110/120/130=grade only, 988, 999
     @staticmethod
     def ssf6(rng):
         r = rng.random()
-        if r < 0.10:  return 999
-        if r < 0.15:  return int(rng.choice([110, 120, 130]))
-        scores = [30, 40, 50, 60, 70, 80, 90]
+        if r < 0.08:  return '999'
+        if r < 0.10:  return '988'
+        if r < 0.15:  return str(rng.choice(['110', '120', '130']))
+        scores = ['030', '040', '050', '060', '070', '080', '090']
         p = [0.05, 0.10, 0.15, 0.25, 0.20, 0.15, 0.10]
-        return int(rng.choice(scores, p=p))
+        return str(rng.choice(scores, p=p))
 
-    # HER2 IHC+ISH (SSF7): 100=IHC0, 101=IHC1+, 300=IHC3+(pos), 510=ISH+, 999=unknown
+    # HER2 (SSF7): 100=IHC 0, 101=IHC 1+, 102=IHC 2+ with no ISH follow-up,
+    # 103=IHC 3+, 510/511=IHC 1+ with ISH, 531=IHC 3+ with ISH positive, 999
     @staticmethod
     def ssf7(rng):
         r = rng.random()
-        if r < 0.35:  return 100   # IHC 0 Neg
-        if r < 0.55:  return 101   # IHC 1+ Neg
-        if r < 0.70:  return 200   # IHC 2+ Equivocal (no ISH)
-        if r < 0.80:  return 510   # ISH Positive
-        if r < 0.90:  return 300   # IHC 3+ Positive
-        return 999
+        if r < 0.35:  return '100'   # IHC 0 — negative
+        if r < 0.55:  return '101'   # IHC 1+ — negative (low HER2)
+        if r < 0.70:  return '102'   # IHC 2+ equivocal, no ISH performed
+        if r < 0.80:  return '521'   # IHC 2+ + ISH positive
+        if r < 0.90:  return '531'   # IHC 3+ + ISH positive
+        return '999'
 
-    # Paget's (SSF8): 0=no, 1=yes without mass, 2=yes with mass, 9=unknown
+    # Paget's (SSF8): 000=no, 010=present, 988=specimen excludes nipple, 999
     @staticmethod
     def ssf8(rng):
-        return int(rng.choice([0, 1, 2, 9], p=[0.88, 0.05, 0.05, 0.02]))
+        return str(rng.choice(['000', '010', '988', '999'],
+                              p=[0.88, 0.05, 0.05, 0.02]))
 
-    # LVI_SSF (SSF9): 0=none, 1=present, 9=unknown
+    # LVI (SSF9): 000=none, 010=present, 988=N/A,
+    # 990=no residual tumour after neoadjuvant therapy, 999=unknown
     @staticmethod
     def ssf9(rng):
-        return int(rng.choice([0, 1, 9], p=[0.55, 0.30, 0.15]))
+        return str(rng.choice(['000', '010', '990', '999'],
+                              p=[0.55, 0.30, 0.03, 0.12]))
 
-    # Ki67 (SSF10): 0-100=%, 999=unknown
+    # Ki-67 (SSF10): 000-100=%, A00-A09=sub-1%, 988, 998, 999
     @staticmethod
     def ssf10(rng):
         r = rng.random()
-        if r < 0.15:  return 999
+        if r < 0.15:  return '999'
+        if r < 0.17:  return f'A{int(rng.integers(1, 10)):02d}'
         # Log-normal distribution centred ~20%
         val = int(np.clip(rng.lognormal(mean=3.0, sigma=0.7), 1, 99))
-        return val
+        return f'{val:03d}'
 
     # Path T stage
     PSTAGE_CHOICES = ['I', 'IA', 'IB', 'II', 'IIA', 'IIB', 'III', 'IIIA', 'IIIB', 'IIIC', 'IV']
@@ -405,10 +425,844 @@ _CLASS_MAP = {
     '3': 'Class 3: Dx & all Tx elsewhere (DC only)',
 }
 
+def _gen_field(generator, rng, dependency):
+    """Call an SSF generator, passing `dependency` only if it takes one.
+
+    A generator declared as ``f(rng)`` is independent; one declared as
+    ``f(other_value, rng)`` derives its value from another SSF field.
+    """
+    import inspect
+
+    params = inspect.signature(generator).parameters
+    if len(params) >= 2:
+        return generator(dependency, rng)
+    return generator(rng)
+
+
+class _ProstateFields:
+    """Distributions for prostate SSF fields.
+
+    Codes come only from the official 編碼範圍 (Cancer-SSF-Manual pp.175-191,
+    transcribed in tcr_decoder/code_ranges.py) at the declared 3-character
+    width. The Gleason pattern (SSF2/SSF4) and score (SSF3/SSF5) pairs are
+    generated together so the score really is the sum of the two patterns,
+    the way the manual says they must be reported.
+    """
+
+    TCODE1_CHOICES = ['C61.9']
+    TCODE1_P       = [1.0]
+
+    # Prostate is not a paired organ.
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+
+    MCODE_CHOICES = ['8140', '8480', '8201', '8500', '8148']
+    MCODE_P       = [0.88,   0.04,   0.03,   0.03,   0.02]
+
+    PSTAGE_CHOICES = ['I', 'IIA', 'IIB', 'IIC', 'IIIA', 'IIIB', 'IIIC', 'IV']
+    PSTAGE_P       = [0.18, 0.20, 0.16, 0.12, 0.10,   0.08,   0.06,   0.10]
+
+    # SSF1 — PSA lab value: 001=<=0.1, 002-979 = value x10, 981-997 = tiers,
+    # 988 = N/A, 998 = >=8000, 999 = unknown
+    @staticmethod
+    def ssf1(rng):
+        r = rng.random()
+        if r < 0.06:  return '999'
+        if r < 0.08:  return '988'
+        if r < 0.10:  return str(int(rng.choice([981, 982, 983, 984, 985, 986,
+                                                 987, 989, 990, 991, 998])))
+        if r < 0.12:  return '001'
+        # Log-normal PSA centred around 8 ng/mL, stored x10
+        value = float(np.clip(rng.lognormal(mean=2.1, sigma=0.9), 0.2, 97.9))
+        return f'{round(value * 10):03d}'
+
+    # SSF2 — Gleason primary/secondary pattern on needle biopsy/TURP
+    @staticmethod
+    def ssf2(rng):
+        r = rng.random()
+        if r < 0.08:  return '988'
+        if r < 0.12:  return '999'
+        if r < 0.14:  return '099'
+        primary = int(rng.choice([3, 4, 5, 2], p=[0.62, 0.27, 0.08, 0.03]))
+        secondary = int(rng.choice([3, 4, 5, 9], p=[0.50, 0.35, 0.12, 0.03]))
+        return f'{primary}{secondary}'.zfill(3)
+
+    # SSF3 — Gleason score on needle biopsy/TURP (must equal SSF2's sum)
+    @staticmethod
+    def ssf3(ssf2_val, rng):
+        if ssf2_val in ('988', '999', '099'):
+            return '988' if ssf2_val == '988' else '999'
+        primary, secondary = int(ssf2_val[1]), int(ssf2_val[2])
+        if secondary == 9:            # secondary unknown -> score unknown
+            return '999'
+        return f'{primary + secondary:03d}'
+
+    # SSF4 — Gleason pattern on radical prostatectomy / autopsy
+    @staticmethod
+    def ssf4(rng):
+        r = rng.random()
+        if r < 0.45:  return '988'    # many cases never get a prostatectomy
+        if r < 0.50:  return '999'
+        primary = int(rng.choice([3, 4, 5], p=[0.55, 0.35, 0.10]))
+        secondary = int(rng.choice([3, 4, 5, 9], p=[0.45, 0.38, 0.14, 0.03]))
+        return f'{primary}{secondary}'.zfill(3)
+
+    # SSF5 — Gleason score on radical prostatectomy (must equal SSF4's sum)
+    @staticmethod
+    def ssf5(ssf4_val, rng):
+        return _ProstateFields.ssf3(ssf4_val, rng)
+
+    # SSF6 — cores examined: 001-100, 988 (TURP only), 999
+    @staticmethod
+    def ssf6(rng):
+        r = rng.random()
+        if r < 0.08:  return '988'
+        if r < 0.12:  return '999'
+        return f'{int(rng.integers(6, 25)):03d}'
+
+    # SSF7 — cores positive: 000-100, 988, 998, 999
+    @staticmethod
+    def ssf7(rng):
+        r = rng.random()
+        if r < 0.08:  return '988'
+        if r < 0.11:  return '999'
+        if r < 0.13:  return '998'
+        if r < 0.20:  return '000'
+        return f'{int(rng.integers(1, 13)):03d}'
+
+    # SSF8 — clinical T staging method
+    @staticmethod
+    def ssf8(rng):
+        return str(rng.choice(['000', '010', '020', '030', '040', '050', '988', '999'],
+                              p=[0.05, 0.15, 0.12, 0.40, 0.08, 0.10, 0.04, 0.06]))
+
+    # SSF9 / SSF10 — not collected for prostate: always 988
+    @staticmethod
+    def ssf9(rng):
+        return '988'
+
+    @staticmethod
+    def ssf10(rng):
+        return '988'
+
+
+class _EndometriumFields:
+    """Distributions for uterine corpus (endometrial) SSF fields.
+
+    Codes come only from the official 編碼範圍 (Cancer-SSF-Manual pp.151-161).
+    SSF1/SSF2 reuse the breast ER/PR scheme; SSF7-SSF10 are not collected for
+    this site and are always 988.
+    """
+
+    TCODE1_CHOICES = ['C54.1', 'C54.9', 'C54.0', 'C54.3']
+    TCODE1_P       = [0.72,    0.18,    0.06,    0.04]
+
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+
+    MCODE_CHOICES = ['8380', '8441', '8310', '8950', '8560']
+    MCODE_P       = [0.78,   0.10,   0.05,   0.04,   0.03]
+
+    PSTAGE_CHOICES = ['I', 'IA', 'IB', 'II', 'IIIA', 'IIIB', 'IIIC', 'IVA', 'IVB']
+    PSTAGE_P       = [0.04, 0.44, 0.16, 0.10, 0.06,  0.03,   0.10,   0.03,  0.04]
+
+    # ER/PR use the identical code scheme as breast SSF1/SSF2 (p.153/155).
+    ssf1 = staticmethod(_BreastFields.ssf1)
+    ssf2 = staticmethod(_BreastFields.ssf2)
+
+    # SSF3 — % non-endometrioid cell type = FIGO grade
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['001', '002', '003', '988', '999'],
+                              p=[0.42, 0.30, 0.16, 0.04, 0.08]))
+
+    # SSF4 — POLE gene mutation
+    @staticmethod
+    def ssf4(rng):
+        return str(rng.choice(['010', '020', '030', '999'],
+                              p=[0.06, 0.30, 0.02, 0.62]))
+
+    # SSF5 — MSI / MMR status
+    @staticmethod
+    def ssf5(rng):
+        return str(rng.choice(['000', '010', '020', '988', '999'],
+                              p=[0.45, 0.05, 0.25, 0.05, 0.20]))
+
+    # SSF6 — p53 protein
+    @staticmethod
+    def ssf6(rng):
+        return str(rng.choice(['010', '020', '030', '999'],
+                              p=[0.15, 0.45, 0.03, 0.37]))
+
+    # SSF7-SSF10 — not collected for this site
+    @staticmethod
+    def ssf7(rng):
+        return '988'
+
+    @staticmethod
+    def ssf8(rng):
+        return '988'
+
+    @staticmethod
+    def ssf9(rng):
+        return '988'
+
+    @staticmethod
+    def ssf10(rng):
+        return '988'
+
+
+class _ThyroidFields:
+    """Thyroid collects no SSFs (manual p.1): every SSF field is 988."""
+
+    TCODE1_CHOICES = ['C73.9']
+    TCODE1_P       = [1.0]
+
+    LAT_CHOICES = ['1', '2', '0', '9']
+    LAT_P       = [0.40, 0.40, 0.15, 0.05]
+
+    MCODE_CHOICES = ['8260', '8340', '8330', '8510', '8020']
+    MCODE_P       = [0.55,   0.30,   0.08,   0.04,   0.03]
+
+    PSTAGE_CHOICES = ['I', 'II', 'III', 'IVA', 'IVB']
+    PSTAGE_P       = [0.68, 0.18, 0.06, 0.05, 0.03]
+
+
+for _i in range(1, 11):
+    setattr(_ThyroidFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
+
+
+class _CervixFields:
+    """Cervix collects SSF1 (SCC antigen value) and SSF2 only (p.147-150)."""
+
+    TCODE1_CHOICES = ['C53.9', 'C53.0', 'C53.1']
+    TCODE1_P       = [0.80,    0.12,    0.08]
+
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+
+    MCODE_CHOICES = ['8070', '8140', '8560', '8020']
+    MCODE_P       = [0.70,   0.22,   0.05,   0.03]
+
+    PSTAGE_CHOICES = ['I', 'IA', 'IB', 'II', 'IIA', 'IIB', 'III', 'IIIB', 'IVA', 'IVB']
+    PSTAGE_P       = [0.06, 0.18, 0.22, 0.04, 0.10, 0.16, 0.04, 0.12,   0.04,  0.04]
+
+    @staticmethod
+    def ssf1(rng):
+        r = rng.random()
+        if r < 0.20:  return '999'
+        if r < 0.25:  return '988'
+        if r < 0.28:  return '987'
+        value = float(np.clip(rng.lognormal(mean=0.6, sigma=0.9), 0.2, 98.6))
+        return f'{round(value * 10):03d}'
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['010', '020', '030', '988', '999'],
+                              p=[0.30, 0.50, 0.05, 0.05, 0.10]))
+
+
+for _i in range(3, 11):
+    setattr(_CervixFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
+
+
+class _StomachFields:
+    """Stomach collects SSF1-SSF5 (p.37-43); SSF6-SSF20 are 988."""
+
+    TCODE1_CHOICES = ['C16.0', 'C16.1', 'C16.2', 'C16.3', 'C16.9']
+    TCODE1_P       = [0.22,    0.14,    0.14,    0.20,    0.30]
+
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+
+    MCODE_CHOICES = ['8140', '8144', '8490', '8211', '8010']
+    MCODE_P       = [0.55,   0.18,   0.15,   0.07,   0.05]
+
+    PSTAGE_CHOICES = ['I', 'IA', 'IB', 'II', 'IIA', 'IIB', 'III', 'IIIA', 'IIIB', 'IIIC', 'IV']
+    PSTAGE_P       = [0.02, 0.16, 0.10, 0.02, 0.12, 0.12, 0.02, 0.12,   0.10,   0.08,   0.14]
+
+    @staticmethod
+    def ssf1(rng):
+        r = rng.random()
+        if r < 0.18:  return '999'
+        if r < 0.24:  return '988'
+        if r < 0.27:  return '987'
+        value = float(np.clip(rng.lognormal(mean=0.9, sigma=1.0), 0.2, 98.6))
+        return f'{round(value * 10):03d}'
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['010', '020', '030', '988', '999'],
+                              p=[0.28, 0.52, 0.05, 0.05, 0.10]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['000', '001', '002', '003', '004', '005',
+                               '006', '007', '008', '010', '988', '999'],
+                              p=[0.30, 0.12, 0.04, 0.10, 0.04, 0.03,
+                                 0.03, 0.03, 0.03, 0.08, 0.05, 0.15]))
+
+    @staticmethod
+    def ssf4(rng):
+        r = rng.random()
+        if r < 0.12:  return '988'
+        if r < 0.18:  return '998'
+        if r < 0.26:  return '999'
+        return f'{int(np.clip(rng.lognormal(mean=3.2, sigma=0.8), 1, 979)):03d}'
+
+    @staticmethod
+    def ssf5(rng):
+        return str(rng.choice(['000', '010', '988', '990', '999'],
+                              p=[0.42, 0.38, 0.06, 0.04, 0.10]))
+
+
+for _i in range(6, 11):
+    setattr(_StomachFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
+
+
+class _LiverFields:
+    """Liver collects SSF1-SSF8 (p.79-90); SSF9/SSF10 are 988."""
+
+    TCODE1_CHOICES = ['C22.0', 'C22.1', 'C22.9']
+    TCODE1_P       = [0.82,    0.12,    0.06]
+
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+
+    MCODE_CHOICES = ['8170', '8160', '8180', '8140', '8010']
+    MCODE_P       = [0.80,   0.10,   0.04,   0.03,   0.03]
+
+    PSTAGE_CHOICES = ['I', 'IA', 'IB', 'II', 'IIIA', 'IIIB', 'IVA', 'IVB']
+    PSTAGE_P       = [0.10, 0.18, 0.14, 0.26, 0.12,   0.08,   0.06,  0.06]
+
+    @staticmethod
+    def ssf1(rng):
+        r = rng.random()
+        if r < 0.08:  return '999'
+        if r < 0.12:  return '988'
+        if r < 0.15:  return str(rng.choice(['991', '992', '993']))
+        if r < 0.20:  return f'A{int(rng.integers(0, 100)):02d}'
+        return f'{int(np.clip(rng.lognormal(mean=3.0, sigma=1.6), 0, 987)):03d}'
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '001', '002', '003', '004', '005',
+                               '006', '007', '008', '988', '999'],
+                              p=[0.06, 0.06, 0.06, 0.08, 0.08, 0.10,
+                                 0.24, 0.08, 0.04, 0.06, 0.14]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['105', '106', '199', '207', '208', '209', '299',
+                               '310', '311', '312', '399', '999'],
+                              p=[0.34, 0.20, 0.06, 0.10, 0.06, 0.04, 0.04,
+                                 0.03, 0.02, 0.02, 0.02, 0.07]))
+
+    @staticmethod
+    def ssf4(rng):
+        r = rng.random()
+        if r < 0.06:  return '999'
+        if r < 0.10:  return '988'
+        return f'{int(np.clip(rng.normal(9, 4), 1, 987)):03d}'
+
+    @staticmethod
+    def ssf5(rng):
+        r = rng.random()
+        if r < 0.06:  return '999'
+        if r < 0.10:  return '988'
+        return f'{int(np.clip(rng.lognormal(mean=2.2, sigma=0.8), 1, 987)):03d}'
+
+    @staticmethod
+    def ssf6(rng):
+        r = rng.random()
+        if r < 0.08:  return '999'
+        if r < 0.12:  return '988'
+        if r < 0.13:  return '997'
+        return f'{int(np.clip(rng.normal(11, 2), 1, 60)):03d}'
+
+    @staticmethod
+    def ssf7(rng):
+        return str(rng.choice(['000', '001', '010', '011', '020', '999'],
+                              p=[0.30, 0.05, 0.24, 0.05, 0.30, 0.06]))
+
+    @staticmethod
+    def ssf8(rng):
+        return str(rng.choice(['000', '001', '010', '011', '020', '999'],
+                              p=[0.40, 0.04, 0.26, 0.05, 0.19, 0.06]))
+
+    @staticmethod
+    def ssf9(rng):
+        return '988'
+
+    @staticmethod
+    def ssf10(rng):
+        return '988'
+
+
+class _HeadNeckFields:
+    """Head & neck SSF distributions (Cancer-SSF-Manual pp.3-29).
+
+    SSF3-SSF6 are positional: each character is one nodal region, 0 = not
+    involved, 1 = involved, 8 = cross-region involvement that cannot be
+    localised. SSF9/SSF10 are composite ENE codes.
+    """
+
+    TCODE1_CHOICES = ['C02.1', 'C04.0', 'C06.0', 'C09.9', 'C10.9',
+                      'C11.9', 'C13.9', 'C32.0', 'C00.9', 'C07.9']
+    TCODE1_P       = [0.16,    0.12,    0.16,    0.08,    0.06,
+                      0.16,    0.08,    0.10,    0.04,    0.04]
+
+    LAT_CHOICES = ['1', '2', '0', '9']
+    LAT_P       = [0.32, 0.32, 0.30, 0.06]
+
+    MCODE_CHOICES = ['8070', '8071', '8072', '8140', '8020']
+    MCODE_P       = [0.62,   0.20,   0.08,   0.06,   0.04]
+
+    PSTAGE_CHOICES = ['I', 'II', 'III', 'IVA', 'IVB', 'IVC']
+    PSTAGE_P       = [0.18, 0.18, 0.20, 0.30, 0.08, 0.06]
+
+    @staticmethod
+    def ssf1(rng):
+        r = rng.random()
+        if r < 0.30:  return '000'          # N0
+        if r < 0.36:  return '999'
+        if r < 0.40:  return '988'
+        if r < 0.44:  return str(rng.choice(['990', '991', '992', '993',
+                                             '994', '995', '996', '997']))
+        return f'{int(np.clip(rng.lognormal(mean=3.0, sigma=0.6), 1, 986)):03d}'
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '001', '002', '005', '988', '999'],
+                              p=[0.34, 0.06, 0.02, 0.22, 0.28, 0.08]))
+
+    @staticmethod
+    def _levels(rng, involved_p=0.35):
+        chars = []
+        for _ in range(3):
+            r = rng.random()
+            chars.append('1' if r < involved_p else ('8' if r < involved_p + 0.05 else '0'))
+        return ''.join(chars)
+
+    @staticmethod
+    def ssf3(rng):
+        r = rng.random()
+        if r < 0.10:  return '988'
+        if r < 0.16:  return '999'
+        return _HeadNeckFields._levels(rng, 0.35)
+
+    @staticmethod
+    def ssf4(rng):
+        r = rng.random()
+        if r < 0.10:  return '988'
+        if r < 0.16:  return '999'
+        return _HeadNeckFields._levels(rng, 0.12)
+
+    @staticmethod
+    def ssf5(rng):
+        r = rng.random()
+        if r < 0.10:  return '988'
+        if r < 0.16:  return '999'
+        return _HeadNeckFields._levels(rng, 0.06)
+
+    @staticmethod
+    def ssf6(rng):
+        r = rng.random()
+        if r < 0.10:  return '988'
+        if r < 0.16:  return '999'
+        return _HeadNeckFields._levels(rng, 0.04)
+
+    @staticmethod
+    def ssf7(rng):
+        r = rng.random()
+        if r < 0.30:  return '988'          # non-oral-cavity cases
+        if r < 0.36:  return '998'
+        if r < 0.42:  return '999'
+        if r < 0.44:  return str(rng.choice(['987', '990', '997']))
+        return f'{int(np.clip(rng.lognormal(mean=3.3, sigma=0.7), 1, 979)):03d}'
+
+    @staticmethod
+    def ssf8(rng):
+        r = rng.random()
+        if r < 0.30:  return '988'
+        if r < 0.36:  return '998'
+        if r < 0.42:  return '999'
+        if r < 0.46:  return '000'          # positive margin / <1mm
+        if r < 0.48:  return str(rng.choice(['987', '990']))
+        return f'{int(np.clip(rng.lognormal(mean=2.6, sigma=0.8), 1, 979)):03d}'
+
+    @staticmethod
+    def ssf9(rng):
+        r = rng.random()
+        if r < 0.30:  return '988'          # cN0
+        if r < 0.36:  return '998'
+        first = str(rng.choice(['0', '1', '8', '9'], p=[0.45, 0.35, 0.05, 0.15]))
+        second = str(rng.choice(['0', '1', '2', '9'], p=[0.40, 0.25, 0.15, 0.20]))
+        third = str(rng.choice(['0', '1', '2', '9'], p=[0.45, 0.20, 0.10, 0.25]))
+        return f'{first}{second}{third}'
+
+    @staticmethod
+    def ssf10(rng):
+        r = rng.random()
+        if r < 0.34:  return '988'
+        if r < 0.40:  return '999'
+        if r < 0.44:  return '998'
+        if r < 0.52:  return '000'
+        if r < 0.58:  return str(rng.choice(['199', '299', '399', '210']))
+        if r < 0.78:  return f'1{int(rng.integers(1, 21)):02d}'
+        return f'2{int(rng.integers(21, 99)):02d}'
+
+
+class _EsophagusFields:
+    """Esophagus collects SSF1-SSF4 (manual pp.31-36)."""
+
+    TCODE1_CHOICES = ['C15.5', 'C15.4', 'C15.3', 'C15.9']
+    TCODE1_P       = [0.42,    0.28,    0.18,    0.12]
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+    MCODE_CHOICES = ['8070', '8140', '8071', '8020']
+    MCODE_P       = [0.80,   0.12,   0.05,   0.03]
+    PSTAGE_CHOICES = ['I', 'IIA', 'IIB', 'IIIA', 'IIIB', 'IVA', 'IVB']
+    PSTAGE_P       = [0.10, 0.14, 0.16, 0.20,   0.18,   0.12,  0.10]
+
+    @staticmethod
+    def ssf1(rng):
+        return str(rng.choice(['000', '020', '030', '040', '988', '999'],
+                              p=[0.30, 0.34, 0.06, 0.16, 0.06, 0.08]))
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '010', '988', '999'],
+                              p=[0.30, 0.24, 0.36, 0.10]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['000', '001', '002', '003', '010', '020',
+                               '030', '040', '988', '990', '999'],
+                              p=[0.08, 0.06, 0.08, 0.06, 0.04, 0.04,
+                                 0.04, 0.04, 0.42, 0.04, 0.10]))
+
+    @staticmethod
+    def ssf4(rng):
+        return str(rng.choice(['010', '020', '030', '040', '988', '990', '999'],
+                              p=[0.10, 0.14, 0.06, 0.04, 0.52, 0.04, 0.10]))
+
+
+for _i in range(5, 11):
+    setattr(_EsophagusFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
+
+
+class _PancreasFields:
+    """Pancreas collects SSF1-SSF6 (manual pp.91-101)."""
+
+    TCODE1_CHOICES = ['C25.0', 'C25.1', 'C25.2', 'C25.9']
+    TCODE1_P       = [0.58,    0.16,    0.10,    0.16]
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+    MCODE_CHOICES = ['8140', '8500', '8246', '8240', '8010']
+    MCODE_P       = [0.78,   0.08,   0.05,   0.05,   0.04]
+    PSTAGE_CHOICES = ['IA', 'IB', 'IIA', 'IIB', 'III', 'IV']
+    PSTAGE_P       = [0.08, 0.10, 0.12, 0.24, 0.20, 0.26]
+
+    @staticmethod
+    def ssf1(rng):
+        r = rng.random()
+        if r < 0.24:  return '999'
+        if r < 0.30:  return '988'
+        value = float(np.clip(rng.lognormal(mean=0.8, sigma=1.0), 0.2, 98.6))
+        return f'{round(value * 10):03d}'
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['010', '020', '030', '988', '999'],
+                              p=[0.26, 0.46, 0.04, 0.08, 0.16]))
+
+    @staticmethod
+    def ssf3(rng):
+        r = rng.random()
+        if r < 0.14:  return '999'
+        if r < 0.20:  return '988'
+        if r < 0.28:  return str(rng.choice(['980', '981', '982', '983', '984',
+                                             '985', '991', '997']))
+        value = float(np.clip(rng.lognormal(mean=3.0, sigma=1.4), 0.2, 97.9))
+        return f'{round(value * 10):03d}'
+
+    @staticmethod
+    def ssf4(rng):
+        r = rng.random()
+        if r < 0.70:  return '988'      # only neuroendocrine tumours
+        if r < 0.78:  return '999'
+        if r < 0.80:  return f'A{int(rng.integers(1, 10)):02d}'
+        return f'{int(np.clip(rng.lognormal(mean=2.0, sigma=1.0), 0, 100)):03d}'
+
+    @staticmethod
+    def ssf5(rng):
+        r = rng.random()
+        if r < 0.70:  return '988'
+        if r < 0.76:  return '999'
+        if r < 0.86:  return str(rng.choice(['110', '120', '130']))
+        return f'{int(rng.integers(0, 22)):03d}'
+
+    @staticmethod
+    def ssf6(rng):
+        r = rng.random()
+        if r < 0.10:  return '988'
+        if r < 0.18:  return '999'
+        history = '1' if rng.random() < 0.35 else '0'
+        if rng.random() < 0.15:
+            return f'{history}99'
+        value = int(np.clip(rng.normal(62, 12), 40, 94))
+        return f'{history}{value:02d}'
+
+
+for _i in range(7, 11):
+    setattr(_PancreasFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
+
+
+class _OvaryFields:
+    """Ovary collects SSF1-SSF3 (manual pp.163-167)."""
+
+    TCODE1_CHOICES = ['C56.9']
+    TCODE1_P       = [1.0]
+    LAT_CHOICES = ['1', '2', '96', '9']
+    LAT_P       = [0.40, 0.40, 0.15, 0.05]
+    MCODE_CHOICES = ['8441', '8460', '8480', '8310', '8380']
+    MCODE_P       = [0.42,   0.20,   0.14,   0.14,   0.10]
+    PSTAGE_CHOICES = ['IA', 'IB', 'IC', 'IIA', 'IIB', 'IIIA', 'IIIB', 'IIIC', 'IV']
+    PSTAGE_P       = [0.16, 0.04, 0.12, 0.06, 0.06, 0.10,   0.08,   0.26,   0.12]
+
+    @staticmethod
+    def ssf1(rng):
+        r = rng.random()
+        if r < 0.10:  return '999'
+        if r < 0.14:  return '988'
+        if r < 0.22:  return str(rng.choice(['901', '902', '903', '910', '920',
+                                             '930', '931']))
+        return f'{int(np.clip(rng.lognormal(mean=5.0, sigma=1.2), 1, 900)):03d}'
+
+    @staticmethod
+    def ssf2(rng):
+        r = rng.random()
+        if r < 0.18:  return '999'
+        if r < 0.24:  return '988'
+        if r < 0.28:  return str(rng.choice(['901', '905', '930']))
+        return f'{int(np.clip(rng.lognormal(mean=2.6, sigma=1.1), 1, 900)):03d}'
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['000', '010', '020', '030', '040', '988',
+                               '990', '991', '999'],
+                              p=[0.34, 0.14, 0.10, 0.10, 0.08, 0.10,
+                                 0.04, 0.04, 0.06]))
+
+
+for _i in range(4, 11):
+    setattr(_OvaryFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
+
+
+class _BladderFields:
+    """Bladder collects SSF1-SSF3 (manual pp.169-173)."""
+
+    TCODE1_CHOICES = ['C67.9', 'C67.1', 'C67.2', 'C67.0']
+    TCODE1_P       = [0.58,    0.16,    0.14,    0.12]
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.95, 0.05]
+    MCODE_CHOICES = ['8120', '8130', '8070', '8140']
+    MCODE_P       = [0.62,   0.26,   0.07,   0.05]
+    PSTAGE_CHOICES = ['0A', 'I', 'II', 'IIIA', 'IIIB', 'IVA', 'IVB']
+    PSTAGE_P       = [0.30, 0.24, 0.18, 0.12,   0.06,   0.06,  0.04]
+
+    @staticmethod
+    def ssf1(rng):
+        return str(rng.choice(['010', '020', '988', '999'],
+                              p=[0.34, 0.50, 0.08, 0.08]))
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '010', '020', '030', '988', '999'],
+                              p=[0.54, 0.10, 0.06, 0.06, 0.14, 0.10]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['000', '010', '988', '999'],
+                              p=[0.24, 0.52, 0.16, 0.08]))
+
+
+for _i in range(4, 11):
+    setattr(_BladderFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
+
+
+class _LymphomaFields:
+    """Lymphoma SSF distributions (manual pp.194-206).
+
+    Unlike every other group here, the profile is chosen by MCODE, not by
+    TCODE1, so the morphology codes below all have to be real lymphoma
+    M-codes or the decoder would route the case somewhere else.
+    """
+
+    TCODE1_CHOICES = ['C77.9', 'C77.0', 'C77.2', 'C16.9', 'C42.2']
+    TCODE1_P       = [0.44,    0.18,    0.16,    0.12,    0.10]
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.92, 0.08]
+    # DLBCL, follicular, Hodgkin (nodular sclerosis / mixed), MALT, T-cell.
+    MCODE_CHOICES = ['9680', '9690', '9663', '9650', '9699', '9702']
+    MCODE_P       = [0.40,   0.16,   0.14,   0.10,   0.12,   0.08]
+    PSTAGE_CHOICES = ['I', 'II', 'III', 'IV']
+    PSTAGE_P       = [0.22, 0.28,  0.24,  0.26]
+
+    @staticmethod
+    def ssf1(rng):
+        return str(rng.choice(['001', '002', '988', '999'],
+                              p=[0.72, 0.05, 0.08, 0.15]))
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '010', '988', '999'],
+                              p=[0.34, 0.16, 0.42, 0.08]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['000', '001', '002', '003', '004', '005',
+                               '988', '990', '991', '992', '993', '994', '999'],
+                              p=[0.10, 0.16, 0.18, 0.13, 0.06, 0.02,
+                                 0.14, 0.03, 0.03, 0.03, 0.03, 0.02, 0.07]))
+
+    @staticmethod
+    def ssf4(rng):
+        return str(rng.choice(['000', '001', '002', '003', '004', '005',
+                               '988', '990', '991', '992', '999'],
+                              p=[0.03, 0.04, 0.05, 0.03, 0.02, 0.01,
+                                 0.68, 0.02, 0.02, 0.02, 0.08]))
+
+    @staticmethod
+    def ssf5(rng):
+        return str(rng.choice(['000', '001', '002', '988', '999'],
+                              p=[0.42, 0.24, 0.02, 0.08, 0.24]))
+
+    @staticmethod
+    def ssf6(rng):
+        return str(rng.choice(['000', '001', '002', '003', '988', '999'],
+                              p=[0.40, 0.30, 0.08, 0.04, 0.08, 0.10]))
+
+    @staticmethod
+    def _serology(rng):
+        return str(rng.choice(['000', '001', '010', '011', '020', '988', '999'],
+                              p=[0.10, 0.03, 0.58, 0.09, 0.10, 0.05, 0.05]))
+
+    @staticmethod
+    def ssf9(rng):
+        return str(rng.choice(['001', '002', '988', '999'],
+                              p=[0.74, 0.10, 0.06, 0.10]))
+
+    @staticmethod
+    def ssf10(rng):
+        # Non-Hodgkin cases (the majority) code the whole field not-applicable.
+        if rng.random() < 0.62:
+            return '988'
+        esr = int(rng.integers(1, 52))
+        ips = int(rng.integers(0, 8))
+        return f'{esr:02d}{ips}'
+
+
+_LymphomaFields.ssf7 = staticmethod(_LymphomaFields._serology)
+_LymphomaFields.ssf8 = staticmethod(_LymphomaFields._serology)
+
+
+class _LeukemiaFields:
+    """Leukemia SSF distributions (manual pp.207-222). Keyed by MCODE."""
+
+    TCODE1_CHOICES = ['C42.1', 'C42.0', 'C42.4']
+    TCODE1_P       = [0.72,    0.20,    0.08]
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.94, 0.06]
+    # AML, ALL, CLL, CML (9875 is the only one that collects SSF10).
+    MCODE_CHOICES = ['9861', '9835', '9823', '9875', '9945', '9989']
+    MCODE_P       = [0.34,   0.18,   0.20,   0.14,   0.08,   0.06]
+    PSTAGE_CHOICES = ['88']
+    PSTAGE_P       = [1.0]
+
+    @staticmethod
+    def ssf1(rng):
+        return str(rng.choice(['000', '001', '003', '013', '021', '051',
+                               '061', '090', '091', '092', '801', '851',
+                               '890', '988', '998', '999'],
+                              p=[0.22, 0.05, 0.04, 0.02, 0.03, 0.10,
+                                 0.03, 0.14, 0.04, 0.07, 0.02, 0.02,
+                                 0.02, 0.04, 0.06, 0.10]))
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '003', '008', '010', '013', '021',
+                               '051', '052', '090', '091', '092', '803',
+                               '851', '988', '998', '999'],
+                              p=[0.20, 0.04, 0.06, 0.06, 0.02, 0.03,
+                                 0.11, 0.04, 0.13, 0.04, 0.04, 0.02,
+                                 0.02, 0.04, 0.05, 0.10]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['001', '002', '988', '990', '999'],
+                              p=[0.44, 0.14, 0.24, 0.10, 0.08]))
+
+    @staticmethod
+    def ssf4(rng):
+        return str(rng.choice(['000', '010', '011', '012', '013', '014',
+                               '988', '999'],
+                              p=[0.14, 0.03, 0.05, 0.04, 0.02, 0.01,
+                                 0.63, 0.08]))
+
+    @staticmethod
+    def ssf5(rng):
+        return str(rng.choice(['000', '001', '002', '003', '988', '999'],
+                              p=[0.16, 0.03, 0.06, 0.04, 0.63, 0.08]))
+
+    @staticmethod
+    def ssf6(rng):
+        return str(rng.choice(['001', '002', '003', '988', '999'],
+                              p=[0.52, 0.14, 0.06, 0.06, 0.22]))
+
+    @staticmethod
+    def _serology(rng):
+        return str(rng.choice(['000', '001', '010', '011', '020', '988', '999'],
+                              p=[0.09, 0.03, 0.60, 0.09, 0.09, 0.05, 0.05]))
+
+    @staticmethod
+    def ssf9(rng):
+        return str(rng.choice(['001', '002', '988', '999'],
+                              p=[0.70, 0.14, 0.06, 0.10]))
+
+    @staticmethod
+    def ssf10(rng):
+        # Only CML (M-9875/3) collects this field.
+        if rng.random() < 0.84:
+            return '988'
+        months = int(rng.integers(0, 25))
+        band = str(rng.choice(['0', '1', '2', '3', '4', '5', '6'],
+                              p=[0.08, 0.14, 0.18, 0.20, 0.18, 0.16, 0.06]))
+        return f'{months:02d}{band}'
+
+
+_LeukemiaFields.ssf7 = staticmethod(_LeukemiaFields._serology)
+_LeukemiaFields.ssf8 = staticmethod(_LeukemiaFields._serology)
+
+
 _CANCER_FIELDS_MAP = {
     'breast':      _BreastFields,
     'lung':        _LungFields,
     'colorectum':  _ColorectumFields,
+    'prostate':    _ProstateFields,
+    'endometrium': _EndometriumFields,
+    'thyroid':     _ThyroidFields,
+    'cervix':      _CervixFields,
+    'stomach':     _StomachFields,
+    'liver':       _LiverFields,
+    'head_neck':   _HeadNeckFields,
+    'esophagus':   _EsophagusFields,
+    'pancreas':    _PancreasFields,
+    'ovary':       _OvaryFields,
+    'bladder':     _BladderFields,
+    'lymphoma':    _LymphomaFields,
+    'leukemia':    _LeukemiaFields,
 }
 
 
@@ -458,6 +1312,8 @@ class SyntheticTCRGenerator:
             return _choice(self._rng, ['1', '2'], p=[0.01, 0.99])
         if self.cancer_group == 'prostate':
             return '1'
+        if self.cancer_group in ('endometrium', 'cervix', 'ovary'):
+            return '2'
         return _choice(self._rng, ['1', '2'], p=[0.50, 0.50])
 
     def _age(self) -> int:
@@ -493,12 +1349,14 @@ class SyntheticTCRGenerator:
         return int(self._rng.integers(1, 30))
 
     def _lnpositive(self, lnexam: int) -> str:
-        if lnexam == 0:   return '0'
-        if lnexam == 95:  return str(int(self._rng.integers(0, 4)))
+        """區域淋巴結侵犯數: a 2-character field (Longform p.130)."""
+        if lnexam == 0:   return '00'
+        if lnexam == 95:  return f'{int(self._rng.integers(0, 4)):02d}'
         r = self._rng.random()
-        if r < 0.55:  return '0'
-        if r < 0.85:  return str(int(self._rng.integers(1, min(lnexam + 1, 20))))
-        return '95'  # ≥95 (all positive)
+        if r < 0.55:  return '00'
+        if r < 0.85:
+            return f'{int(self._rng.integers(1, min(lnexam + 1, 20))):02d}'
+        return '95'  # positive by aspiration/core biopsy only
 
     def _tx_flag(self, p_yes: float = 0.5) -> str:
         """Return code for treatment performed/not."""
@@ -571,15 +1429,16 @@ class SyntheticTCRGenerator:
             lnpos    = self._lnpositive(lnexam)
 
             # SSF fields (cancer-specific)
+            # Some SSF fields are only meaningful relative to another field --
+            # breast SSF5 (positive sentinel nodes) cannot exceed SSF4
+            # (nodes examined), and prostate SSF3/SSF5 (Gleason score) must be
+            # the sum of the patterns in SSF2/SSF4. Those generators declare a
+            # second parameter and are passed the field they depend on.
             ssf1  = fc.ssf1(r)
             ssf2  = fc.ssf2(r)
-            ssf3  = fc.ssf3(r)
+            ssf3  = _gen_field(fc.ssf3, r, ssf2)
             ssf4  = fc.ssf4(r)
-            # ssf5: breast takes (ssf4, rng), others take only (rng)
-            try:
-                ssf5 = fc.ssf5(ssf4, r)   # breast
-            except TypeError:
-                ssf5 = fc.ssf5(r)          # lung, crc
+            ssf5  = _gen_field(fc.ssf5, r, ssf4)
             ssf6  = fc.ssf6(r)
             ssf7  = fc.ssf7(r)
             ssf8  = fc.ssf8(r)
@@ -613,7 +1472,9 @@ class SyntheticTCRGenerator:
 
             # Radiation
             has_rt  = r.random() < 0.50
-            r_raw   = '1' if has_rt else '0'
+            # RT Status (#4.2.1.8, R_raw) is not a boolean: 00 = given at this
+            # hospital, 01 = not part of the plan. There is no bare '1'.
+            r_raw   = '00' if has_rt else '01'
             rtar    = int(r.choice([0, 1, 2, 3, 7], p=[0.10, 0.30, 0.30, 0.20, 0.10])) if has_rt else 0
             rmod    = _choice(r, ['1', '2', '3', '9'], p=[0.55, 0.20, 0.20, 0.05]) if has_rt else '0'
             hdose   = int(r.integers(4000, 6600)) if has_rt else 0
