@@ -487,7 +487,8 @@ class TCRDecoder:
             'No outside|Unknown|No surgery|autopsy ONLY|death certificate',
             na=True, case=False)
         out['Any_Surgery'] = np.where(_surg_this | _surg_other, 'Yes', 'No')
-        out['Minimally_Invasive']  = en(self._dec('MINS'))
+        out['Minimally_Invasive']      = LONGFORM_CODE_MAPS['MINS'][0].decode(
+            self._raw('MINS'))
         out['Surgical_Margin']     = en(self._dec('MARG95'))
         out['Surgical_Margin_mm']  = clean_numeric(
             self._raw('MARGDIS'), unknown_vals={'990', '999', '988', '9999'})
@@ -498,18 +499,25 @@ class TCRDecoder:
         # other cancers→ cancer-specific column names).
 
         # ── Radiation ─────────────────────────────────────
-        out['Radiation_Performed'] = en(self._dec('R'))
-        out['RT_Target_Summary']   = en(self._dec('RTAR'))
-        out['RT_Modality']         = en(self._dec('RMOD'))
+        out['Radiation_Performed']     = LONGFORM_CODE_MAPS['R'][0].decode(
+            self._raw('R'))
+        out['RT_Target_Summary']       = LONGFORM_CODE_MAPS['RTAR'][0].decode(
+            self._raw('RTAR'))
+        out['RT_Modality']             = LONGFORM_CODE_MAPS['RMOD'][0].decode(
+            self._raw('RMOD'))
         out['EBRT_Technique']      = decode_ebrt_additive(self._raw('EBRT'))
-        out['High_Dose_Target']    = en(self._dec('HTAR'))
+        out['High_Dose_Target']        = LONGFORM_CODE_MAPS['HTAR'][0].decode(
+            self._raw('HTAR'))
         out['High_Dose_cGy']       = clean_numeric(self._raw('HDOSE'), unknown_vals={'0', '99999'})
         out['High_Dose_Fractions'] = clean_numeric(self._raw('HNO'), unknown_vals={'0', '99'})
-        out['Low_Dose_Target']     = en(self._dec('LTAR'))
+        out['Low_Dose_Target']         = LONGFORM_CODE_MAPS['LTAR'][0].decode(
+            self._raw('LTAR'))
         out['Low_Dose_cGy']        = clean_numeric(self._raw('LDOSE'), unknown_vals={'0', '99999'})
         out['Low_Dose_Fractions']  = clean_numeric(self._raw('LNO'), unknown_vals={'0', '99'})
-        out['RT_Seq_Surgery']      = en(self._dec('SEQRS'))
-        out['RT_vs_Systemic_Seq']  = en(self._dec('SEQLS'))
+        out['RT_Seq_Surgery']          = LONGFORM_CODE_MAPS['SEQRS'][0].decode(
+            self._raw('SEQRS'))
+        out['RT_vs_Systemic_Seq']      = LONGFORM_CODE_MAPS['SEQLS'][0].decode(
+            self._raw('SEQLS'))
 
         # ── Systemic Therapy ──────────────────────────────
         out['Chemo_Other_Hosp']        = LONGFORM_CODE_MAPS['PREC'][0].decode(

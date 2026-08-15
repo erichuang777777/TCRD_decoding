@@ -72,6 +72,7 @@ LONGFORM_FIELDS: Dict[str, LongformField] = {
     '4.1.2': LongformField('4.1.2', 'Date of Most Definite Surgical Resection of the Primary', 'Site', 8, '', 175),
     '4.1.3': LongformField('4.1.3', 'Surgical Procedure of Primary Site', 'at Other Facility', 3, '000, 100-800, 900, 980, 990', 177),
     '4.1.4': LongformField('4.1.4', 'Surgical Procedure of Primary Site', 'at This Facility', 3, '000, 100-800, 900, 980, 990', 179),
+    '4.1.4.1': LongformField('4.1.4.1', '微創手術', 'Minimally Invasive Surgery', 1, '0-4, 8-9', 181),
     '4.1.5': LongformField('4.1.5', '原發部位手術邊緣', 'Surgical Margins of the Primary Site', 1, '0-5, 7-9, A-F', 184),
     '4.1.5.1': LongformField('4.1.5.1', '原發部位手術切緣距離', 'Surgical Margins Distance of the Primary Site', 3, '000-980, 987, 988, 990-991, 999, A01-A09', 188),
     '4.1.6': LongformField('4.1.6', 'Scope of Regional Lymph Node Surgery', 'at Other Facility', 1, '0-7, 9', 194),

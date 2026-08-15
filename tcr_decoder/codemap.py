@@ -68,7 +68,12 @@ class CodeMap:
         if not s or s.lower() == 'nan':
             return ''
         if s in self.reverse:
-            return str(self.reverse[s]).zfill(self.width)
+            code = self.reverse[s]
+            # A negative sentinel (e.g. RMOD's -9/-1, manual p.212) is never
+            # padded past its sign in the printed 編碼範圍, even in a field
+            # wider than the sentinel itself -- zfill would turn -1 into
+            # '-01' for a 3-character field, a code the manual never lists.
+            return str(code) if code < 0 else str(code).zfill(self.width)
         prefix = f'{self.fallback} '
         if s.startswith(prefix):
             rest = s[len(prefix):]

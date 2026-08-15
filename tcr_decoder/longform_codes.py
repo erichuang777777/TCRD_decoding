@@ -350,3 +350,202 @@ LONGFORM_CODE_MAPS.update({
     'OTH':    (OTHER_TREATMENT_MAP, '4.5.1'),
     'PREP':   (PALLIATIVE_CARE_MAP, '4.4'),
 })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 放射治療 Radiation therapy (#4.2.1.x, #4.2.2.x, pp.207-233)
+#
+# Four of these fields are ADDITIVE bitmasks, the same shape as EBRT
+# (decoders.decode_ebrt_additive): the code is the SUM of every technique or
+# phase used, not a single choice from a list. Enumerating "every legal code"
+# for these means every subset sum, not a flat table -- listing 0-63 by hand
+# would silently accept combinations the manual never defines and reject none
+# of them, so they build their component table the same way EBRT does.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _additive_map(components: dict, zero_label: str, unknown_label: str,
+                  nos_label: str, width: int) -> CodeMap:
+    """A field whose legal codes are -9, -1, and every subset-sum of components."""
+    codes = {-9: unknown_label, -1: nos_label, 0: zero_label}
+    for r in range(1, len(components) + 1):
+        import itertools
+        for combo in itertools.combinations(components, r):
+            total = sum(combo)
+            label = ' + '.join(components[c] for c in sorted(combo))
+            codes[total] = label
+    return CodeMap(codes, width=width)
+
+
+# 放射治療臨床標靶體積摘要 (#4.2.1.1), 最高/較低放射劑量臨床標靶體積
+# (#4.2.2.2.1 / #4.2.2.3.1). Same target-volume vocabulary in all three --
+# what differs between HTAR and LTAR is which dose band it describes, not
+# what the codes mean, so one component table serves all three fields.
+_TARGET_VOLUME_COMPONENTS = {
+    1:  'Primary tumour (T)',
+    2:  'Regional lymph nodes (N)',
+    4:  'Distant metastasis (M)',
+    8:  'Extended lymphoid region (mini-mantle/mantle/inverted-Y, or total '
+        'lymphoid irradiation; Hodgkin and non-Hodgkin lymphoma only)',
+    16: 'Total body / total bone marrow',
+    32: 'Total skin (Kaposi sarcoma, primary cutaneous lymphoma, or another '
+        'disease needing total-skin electron-beam therapy)',
+}
+
+RTAR_MAP = _additive_map(
+    _TARGET_VOLUME_COMPONENTS,
+    zero_label='No radiation therapy',
+    unknown_label='Unknown whether radiation therapy was given',
+    nos_label='Radiation therapy given, target volume not specified '
+              '(includes RT as an endocrine procedure)',
+    width=2)
+
+_EBRT_TARGET_ZERO = ('No external beam radiotherapy, or EBRT given with no '
+                     'clinical target volume')
+HTAR_MAP = _additive_map(
+    _TARGET_VOLUME_COMPONENTS,
+    zero_label=_EBRT_TARGET_ZERO,
+    unknown_label='Unknown whether external beam radiotherapy was given',
+    nos_label='EBRT given, target volume not specified (includes EBRT as an '
+              'endocrine procedure)',
+    width=2)
+LTAR_MAP = HTAR_MAP  # identical vocabulary; HTAR/LTAR differ by dose band,
+                      # a fact carried by the column name, not the code.
+
+# 放射治療儀器 (#4.2.1.2)
+_RT_MODALITY_COMPONENTS = {
+    1:  'External beam radiation therapy (cobalt unit, linear-accelerator '
+        'photon or electron beam, tomotherapy)',
+    2:  'Radiosurgery (Gamma Knife, Linac-based, CyberKnife, Zap-X, or SBRT/'
+        'SABR delivered in <=6 fractions at >=800 cGy/fraction)',
+    4:  'Brachytherapy (interstitial implants, moulds, seeds, needles, or '
+        'intracavitary applicators of radioactive material)',
+    8:  'Radioisotopes (injected radioactive material, e.g. I-131, Sr-89)',
+    16: 'Proton therapy',
+    32: 'Other charged-particle or neutron therapy',
+    64: 'Boron neutron capture therapy (BNCT)',
+}
+RMOD_MAP = _additive_map(
+    _RT_MODALITY_COMPONENTS,
+    zero_label='No radiation therapy',
+    unknown_label='Unknown whether radiation therapy was given',
+    nos_label='Radiation therapy given, modality not specified',
+    width=3)
+
+# 放射治療與手術順序 (#4.2.1.5)
+_SEQRS_COMPONENTS = {
+    1: 'Pre-operative radiation therapy',
+    2: 'Intra-operative radiation therapy (IORT)',
+    4: 'Post-operative radiation therapy',
+}
+SEQRS_MAP = CodeMap({
+    -9: 'Unknown whether the case had surgery and/or radiation therapy',
+    -8: 'No surgery of the primary site or regional nodes (radiation therapy '
+        'only, including radiation to a distant site)',
+    -7: 'Not comparable: nodal lymphoma, a haematologic malignancy, distant '
+        'metastasis, or a first course including surgery and radiation aimed '
+        'at different sites',
+    -6: 'More than two primary-site or regional-node surgeries with '
+        'radiation therapy in between, so the sequence cannot be determined',
+    -1: 'Sequence unknown: the first course had both surgery and radiation '
+        'therapy, but the order is not documented',
+    **{sum(c): ' + '.join(_SEQRS_COMPONENTS[x] for x in sorted(c))
+       for r in (1, 2, 3) for c in __import__('itertools').combinations(
+           _SEQRS_COMPONENTS, r)},
+    0: 'No radiation therapy in the first course (with or without surgery)',
+}, width=2)
+
+# 區域治療與全身性治療順序 (#4.2.1.6)
+_SEQLS_COMPONENTS = {
+    1: 'Induction / neoadjuvant systemic therapy (before locoregional therapy, '
+       'or before radiation when radiation is the main locoregional therapy)',
+    2: 'Concurrent / concomitant systemic and radiation therapy (CSRT), or '
+       'perioperative systemic therapy given around surgery',
+    4: 'Adjuvant systemic therapy (after locoregional therapy)',
+}
+SEQLS_MAP = CodeMap({
+    -9: 'Unknown whether the case had locoregional and/or systemic therapy',
+    -8: 'No locoregional therapy: the first course had systemic drug therapy '
+        'only (regional drug therapy such as TACE may still have been given)',
+    -7: 'The first course had only regional drug therapy (TACE, '
+        'intraperitoneal, intrapleural, intrathecal, intravesical, '
+        'intraocular or intratumoral), with no systemic drug therapy',
+    -1: 'Sequence unknown, or systemic therapy is the main treatment modality '
+        '(nodal lymphoma, haematologic malignancy, or distant metastasis)',
+    **{sum(c): ' + '.join(_SEQLS_COMPONENTS[x] for x in sorted(c))
+       for r in (1, 2, 3) for c in __import__('itertools').combinations(
+           _SEQLS_COMPONENTS, r)},
+    0: 'No systemic drug therapy in the first course (chemotherapy, hormone/'
+       'steroid, immunotherapy or targeted therapy), whether or not '
+       'locoregional therapy was given',
+}, width=2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 放射治療執行狀態 RT Status (#4.2.1.8, pp.236-238)
+#
+# Best-evidence match for the 'R' column (documented as "radiation therapy
+# performed, this hospital"): no field is numbered #4.2 in the manual, and
+# this is the field that actually answers where/whether radiation was given.
+# See docs/codebook_conformance_findings.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+RT_STATUS_MAP = CodeMap({
+    0:  'Radiation therapy given in the first course, at the reporting '
+        'hospital only',
+    1:  'Radiation therapy was not part of the planned first course',
+    2:  'Not advised or given because of a contraindication or another '
+        'patient risk factor (comorbidity, advanced age)',
+    3:  'Not advised or given because the disease progressed',
+    4:  'Given at the reporting hospital but not completed, for a personal '
+        'reason (comorbidity, poor performance status, side effects, death)',
+    5:  'Part of the planned first course, but the patient died or was '
+        'discharged critically ill before it started',
+    6:  'Part of the planned first course, not given, with no reason '
+        'recorded',
+    7:  'Part of the planned first course, but the patient or family refused '
+        'it',
+    8:  'Part of the planned first course, but had not started when the case '
+        'was abstracted',
+    9:  'Radiation therapy given in the first course, at another hospital '
+        'only',
+    10: 'Radiation therapy given in the first course, at both the reporting '
+        'hospital and another hospital',
+    99: 'Not documented, so it is unknown whether radiation therapy was '
+        'advised or given',
+}, width=2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 微創手術 Minimally Invasive Surgery (#4.1.4.1, pp.181-183)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MINIMALLY_INVASIVE_MAP = CodeMap({
+    0: 'Open surgery only; no minimally invasive or robotic-assisted surgery',
+    1: 'Endoscopic surgery (entry through a natural body opening: e.g. '
+       'gastroscopy, colonoscopy, bronchoscopy, hysteroscopy, colposcopy, '
+       'cystoscopy)',
+    2: 'Thoracoscopic, laparoscopic, or a similar minimally invasive surgery '
+       '(percutaneous entry, or a natural opening reopened, into a body '
+       'cavity)',
+    3: 'Robotic-assisted surgery',
+    4: 'Minimally invasive or robotic-assisted surgery combined with, or '
+       'converted to, open surgery',
+    8: 'Not applicable: no primary-site surgery; primary-site surgery coded '
+       '100-190; prostate cancer primary-site surgery coded 210-270; primary-'
+       'site surgery performed at another hospital; diagnosis year 2017 or '
+       'earlier; or a haematopoietic/reticuloendothelial/immunoproliferative/'
+       'myeloproliferative neoplasm',
+    9: 'Not documented',
+}, width=1)
+
+
+LONGFORM_CODE_MAPS.update({
+    'RTAR':  (RTAR_MAP, '4.2.1.1'),
+    'RMOD':  (RMOD_MAP, '4.2.1.2'),
+    'SEQRS': (SEQRS_MAP, '4.2.1.5'),
+    'SEQLS': (SEQLS_MAP, '4.2.1.6'),
+    'R':     (RT_STATUS_MAP, '4.2.1.8'),
+    'HTAR':  (HTAR_MAP, '4.2.2.2.1'),
+    'LTAR':  (LTAR_MAP, '4.2.2.3.1'),
+    'MINS':  (MINIMALLY_INVASIVE_MAP, '4.1.4.1'),
+})

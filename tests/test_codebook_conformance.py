@@ -165,7 +165,10 @@ def test_longform_structural_field_roundtrips_over_its_whole_range(field):
 
     bad = [(c, e) for c, e in zip(raw, encoded) if c != e]
     assert not bad, f'{field} ({ref}): {bad[:5]}'
-    assert all(len(e) == width for e in encoded), f'{field} ({ref}): wrong width'
+    # A negative sentinel (RMOD's -9/-1) is never padded past its sign, even
+    # in a wider field -- the manual's own 編碼範圍 never shows a padded form.
+    bad_width = [e for e in encoded if not e.startswith('-') and len(e) != width]
+    assert not bad_width, f'{field} ({ref}): wrong width {bad_width[:5]}'
 
 
 @pytest.mark.parametrize('field', sorted(LONGFORM_CODECS), ids=sorted(LONGFORM_CODECS))
@@ -348,7 +351,7 @@ def test_the_unverified_field_number_list_does_not_grow_silently():
 
     assert UNVERIFIED_FIELD_NUMBERS <= set(TCR_FIELD_NUMBER), (
         'UNVERIFIED_FIELD_NUMBERS lists a column that no longer exists')
-    assert len(UNVERIFIED_FIELD_NUMBERS) == 11
+    assert len(UNVERIFIED_FIELD_NUMBERS) == 9
 
 
 def test_field_widths_agree_with_the_manual():
@@ -425,7 +428,8 @@ def test_every_longform_code_map_matches_the_official_range():
 
     for tag, (code_map, seq) in sorted(LONGFORM_CODE_MAPS.items()):
         width, legal, ref = LONGFORM[tag]
-        transcribed = {str(c).zfill(width) for c in code_map.mapping}
+        transcribed = {str(c) if c < 0 else str(c).zfill(width)
+                       for c in code_map.mapping}
         assert transcribed == set(legal), (
             f'{tag} (#{seq}, {ref}): '
             f'missing={sorted(set(legal) - transcribed)} '
@@ -453,3 +457,45 @@ def test_therapy_modality_codes_are_not_reused_across_therapies():
     hormone = LONGFORM_CODE_MAPS['PREH'][0].mapping
     assert chemo[2] != hormone[2]
     assert chemo[1] != hormone[1]
+
+
+def test_radiation_additive_fields_reject_a_component_sum_outside_their_table():
+    """RTAR/RMOD/SEQRS/SEQLS are bitmasks: every legal code is a subset-sum of
+    named components. A code outside that domain (e.g. 64 for SEQRS, which
+    only has three 1-bit components summing to at most 7) must not decode."""
+    from tcr_decoder.longform_codes import SEQRS_MAP
+
+    assert SEQRS_MAP.decode_one('64') == 'Code 64'
+    assert '64' not in SEQRS_MAP.mapping
+
+
+def test_htar_and_ltar_share_target_volume_vocabulary_but_are_distinct_fields():
+    """Same code meanings (T/N/M/extended/total-body/total-skin) in both --
+    what differs is which dose band the column records, carried by the
+    column name (High_Dose_Target vs Low_Dose_Target), not by the code."""
+    from tcr_decoder.longform_codes import HTAR_MAP, LTAR_MAP
+
+    assert HTAR_MAP.mapping[3] == LTAR_MAP.mapping[3]
+    assert set(HTAR_MAP.mapping) == set(LTAR_MAP.mapping)
+
+
+def test_rt_status_replaces_the_boolean_r_field():
+    """R (#4.2.1.8) is not a yes/no flag: 00 means given at the reporting
+    hospital, 09 means given only elsewhere, 01-08 are eight different reasons
+    it was not given here. A synthetic '1'/'0' used to be emitted for it and
+    was never a legal code under the real table."""
+    from tcr_decoder.longform_codes import RT_STATUS_MAP
+
+    assert '1' not in RT_STATUS_MAP.mapping
+    assert '0' not in RT_STATUS_MAP.mapping
+    assert RT_STATUS_MAP.mapping[0] != RT_STATUS_MAP.mapping[1]
+
+
+def test_negative_sentinel_codes_are_not_padded_past_their_sign():
+    """RMOD is a 3-character field, but the manual's own 編碼範圍 line lists
+    the sentinels as '-9, -1' -- not '-09, -01'. zfill on a negative number
+    pads after the sign, which would invent a code the manual never lists."""
+    from tcr_decoder.longform_codes import RMOD_MAP
+
+    assert RMOD_MAP.encode_one(RMOD_MAP.decode_one('-9')) == '-9'
+    assert RMOD_MAP.encode_one(RMOD_MAP.decode_one('-1')) == '-1'

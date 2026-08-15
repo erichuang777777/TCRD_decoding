@@ -34,7 +34,9 @@ ROOT = Path(__file__).resolve().parent.parent
 PDF = ROOT / 'docs' / 'Longform-Manual_Official-version_20251224_W-1.pdf'
 OUT = ROOT / 'tcr_decoder' / 'longform_fields.py'
 
-SEQ_RE = re.compile(r'癌登欄位序號\s*#?\s*([\d]+(?:\.[\d]+)*)')
+# Almost every field header uses '癌登欄位序號 #4.1.4.1'; exactly one uses a
+# full-width colon instead of '#' (Minimally Invasive Surgery, p.182).
+SEQ_RE = re.compile(r'癌登欄位序號\s*[#：:]?\s*([\d]+(?:\.[\d]+)*)')
 WIDTH_RE = re.compile(r'^欄位長度：\s*(\d+)')
 RANGE_RE = re.compile(r'^編碼範圍：\s*(.*)$')
 # A continuation of the 編碼範圍 list: codes, ranges and separators only.

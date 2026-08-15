@@ -550,6 +550,27 @@ LONGFORM: Dict[str, Tuple[int, FrozenSet[str], str]] = {
                   'Longform p.301-302 其他治療 (#4.5.1)'),
     'PREP':      (1, _codes(_num_range(0, 7, 1), ('9',)),
                   'Longform p.298-300 申報醫院緩和照護 (#4.4)'),
+    # 放射治療 (#4.1.4.1, #4.2.1.x, #4.2.2.2.1, #4.2.2.3.1). RTAR/RMOD/HTAR/
+    # LTAR/SEQRS/SEQLS are additive bitmasks (see longform_codes._additive_map);
+    # their legal ranges are every subset-sum, generated from the same
+    # component table the decoder uses, not typed out by hand.
+    'MINS':      (1, _codes(_num_range(0, 4, 1), ('8', '9')),
+                  'Longform p.181-183 微創手術 (#4.1.4.1)'),
+    'RTAR':      (2, _codes(*(_num_range(0, 63, 2),), ('-9', '-1')),
+                  'Longform p.207-209 放射治療臨床標靶體積摘要 (#4.2.1.1)'),
+    'RMOD':      (3, _codes(*(_num_range(0, 127, 3),), ('-9', '-1')),
+                  'Longform p.212-215 放射治療儀器 (#4.2.1.2)'),
+    'SEQRS':     (2, _codes(_num_range(0, 7, 2),
+                            ('-9', '-8', '-7', '-6', '-1')),
+                  'Longform p.220-222 放射治療與手術順序 (#4.2.1.5)'),
+    'SEQLS':     (2, _codes(_num_range(0, 7, 2), ('-9', '-8', '-7', '-1')),
+                  'Longform p.233-235 區域治療與全身性治療順序 (#4.2.1.6)'),
+    'R':         (2, _codes(_num_range(0, 10, 2), ('99',)),
+                  'Longform p.236-238 放射治療執行狀態 (#4.2.1.8)'),
+    'HTAR':      (2, _codes(*(_num_range(0, 63, 2),), ('-9', '-1')),
+                  'Longform p.216-217 最高放射劑量臨床標靶體積 (#4.2.2.2.1)'),
+    'LTAR':      (2, _codes(*(_num_range(0, 63, 2),), ('-9', '-1')),
+                  'Longform p.216-217 較低放射劑量臨床標靶體積 (#4.2.2.3.1)'),
     'PRESLNSCO': (1, _codes(_num_range(0, 7, 1), ('9',)),
                   'Longform p.203 外院區域淋巴結手術範圍'),
     'SLNSCO95':  (1, _codes(_num_range(0, 7, 1), ('9',)),

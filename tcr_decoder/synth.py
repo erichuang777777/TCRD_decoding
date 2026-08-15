@@ -1472,7 +1472,9 @@ class SyntheticTCRGenerator:
 
             # Radiation
             has_rt  = r.random() < 0.50
-            r_raw   = '1' if has_rt else '0'
+            # RT Status (#4.2.1.8, R_raw) is not a boolean: 00 = given at this
+            # hospital, 01 = not part of the plan. There is no bare '1'.
+            r_raw   = '00' if has_rt else '01'
             rtar    = int(r.choice([0, 1, 2, 3, 7], p=[0.10, 0.30, 0.30, 0.20, 0.10])) if has_rt else 0
             rmod    = _choice(r, ['1', '2', '3', '9'], p=[0.55, 0.20, 0.20, 0.05]) if has_rt else '0'
             hdose   = int(r.integers(4000, 6600)) if has_rt else 0

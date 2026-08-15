@@ -84,6 +84,14 @@ STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'Targeted_This_Hosp':        ('TAR',       LONGFORM_CODE_MAPS['TAR'][0].encode),
     'Other_Treatment':           ('OTH',       LONGFORM_CODE_MAPS['OTH'][0].encode),
     'Palliative_Care':           ('PREP',      LONGFORM_CODE_MAPS['PREP'][0].encode),
+    'Radiation_Performed':       ('R',          LONGFORM_CODE_MAPS['R'][0].encode),
+    'RT_Target_Summary':         ('RTAR',       LONGFORM_CODE_MAPS['RTAR'][0].encode),
+    'RT_Modality':               ('RMOD',       LONGFORM_CODE_MAPS['RMOD'][0].encode),
+    'High_Dose_Target':          ('HTAR',       LONGFORM_CODE_MAPS['HTAR'][0].encode),
+    'Low_Dose_Target':           ('LTAR',       LONGFORM_CODE_MAPS['LTAR'][0].encode),
+    'RT_Seq_Surgery':            ('SEQRS',      LONGFORM_CODE_MAPS['SEQRS'][0].encode),
+    'RT_vs_Systemic_Seq':        ('SEQLS',      LONGFORM_CODE_MAPS['SEQLS'][0].encode),
+    'Minimally_Invasive':        ('MINS',       LONGFORM_CODE_MAPS['MINS'][0].encode),
 }
 
 # (cancer_group, clean_column) pairs whose value in a `clean` DataFrame does

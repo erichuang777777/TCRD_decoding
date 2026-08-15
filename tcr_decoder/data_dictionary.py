@@ -188,11 +188,17 @@ COLUMN_REGISTRY: Dict[str, tuple] = {
 UNVERIFIED_FIELD_NUMBERS = frozenset({
     'Cause_of_Death', 'Cause_of_Death_Extended',
     'Metastasis_Site_1', 'Metastasis_Site_2', 'Metastasis_Site_3',
-    'Minimally_Invasive', 'Radiation_Performed',
     'Recurrence_Date_Extended', 'Recurrence_Type_Extended',
     'Patient_ID',        # 1.1+1.2: composite of two official fields
     'Survival_Years',    # derived from 5.4 and 2.5, not a reported field
 })
+# 'Minimally_Invasive' (4.1.4.1) and 'Radiation_Performed' (4.2.1.8) used to
+# be listed here: the field index missed them because their header in the
+# manual uses a full-width colon ('癌登欄位序號：4.1.4.1') instead of the '#'
+# every other field uses (scripts/index_longform_fields.py now matches both).
+# Radiation_Performed's claimed number (4.2) never existed either way -- 4.2
+# is a section heading with no code table, and 4.2.1.8 (放射治療執行狀態) is
+# the field that actually answers "was radiation given, where, or why not".
 
 
 TCR_FIELD_NUMBER: Dict[str, str] = {
@@ -255,7 +261,7 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'Regional_LN_Surgery_Other':  '4.1.6',
     'Regional_LN_Surgery_This':   '4.1.7',
     # Section 4.2: Treatment — Radiation
-    'Radiation_Performed':        '4.2',
+    'Radiation_Performed':        '4.2.1.8',
     'RT_Target_Summary':          '4.2.1.1',
     'RT_Modality':                '4.2.1.2',
     'RT_Seq_Surgery':             '4.2.1.5',
