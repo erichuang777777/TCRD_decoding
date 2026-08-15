@@ -1187,6 +1187,250 @@ def _zh_bladder(ssf_key: str, code: str) -> str:
     return f'未定義代碼 {code}'
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 淋巴瘤（碼冊 pp.194-206）
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ZH_LYM_NA_HAEM = '不適用：ICD-O-3 M-9811-9837 且 C42.0、C42.1、C42.4'
+
+_ZH_LYM_HIV = {
+    '001': '陰性。',
+    '002': '陽性。',
+    '988': _ZH_LYM_NA_HAEM,
+    '999': '病歷未記載或不詳；沒有檢驗 HIV。',
+}
+
+_ZH_LYM_B = {
+    '000': '無 B 症狀。',
+    '010': '有以下任一 B 症狀：發燒、夜間盜汗、體重減輕。',
+    '988': '不適用：ICD-O-3 M-9811-9837 且 C42.0/C42.1/C42.4；M-9731-9732、'
+           '9734；非 M-9650-9663。',
+    '999': '不詳。',
+}
+
+_ZH_LYM_IPI_BAND = {
+    '990': '僅記載低風險 (Low risk)。',
+    '991': '僅記載中低風險 (Low intermediate risk)。',
+    '992': '僅記載中高風險 (High intermediate risk)。',
+    '993': '僅記載高風險 (High risk)。',
+    '994': '僅記載中風險 (Intermediate risk)。',
+    '988': '不適用：M-9650-9663；M-9700-9701、9731-9732、9734、9749、9751-9759、'
+           '9761-9762、9766；M-9811-9837 且 C42.0/C42.1/C42.4；濾泡性淋巴瘤僅'
+           '評估 FLIPI 未評估 IPI。',
+    '999': '病歷未記載、不詳或沒有評估。',
+}
+
+_ZH_LYM_FLIPI_BAND = {
+    '990': '僅記載低風險 (Low risk)。',
+    '991': '僅記載中風險 (Intermediate risk)。',
+    '992': '僅記載高風險 (High risk)。',
+    '988': '不適用：非 ICD-O-3 M-95973、96903-96983 者。',
+    '999': '病歷未記載、不詳或沒有評估。',
+}
+
+_ZH_LYM_HTLV1 = {
+    '000': '沒有檢驗 HTLV-1。',
+    '001': '陰性。',
+    '002': '陽性。',
+    '988': _ZH_LYM_NA_HAEM,
+    '999': '病歷未記載或不詳。',
+}
+
+_ZH_LYM_CMV = {
+    '000': '沒有檢驗 CMV。',
+    '001': '沒有發生 CMV 感染。',
+    '002': '發生 CMV 感染但未造成疾病。',
+    '003': '發生 CMV 感染且造成疾病。',
+    '988': '不適用。',
+    '999': '病歷未記載或不詳。',
+}
+
+_ZH_LEU_CMV = {
+    '001': '沒有發生 CMV 感染。',
+    '002': '發生 CMV 感染但未造成疾病。',
+    '003': '發生 CMV 感染且造成疾病。',
+    '988': '不適用：ICD-O-3 M-9811-9837（C42.0、C42.1、C42.4 除外）。',
+    '999': '病歷未記載或不詳；沒有檢驗 CMV。',
+}
+
+
+def _zh_hepatitis(marker: str, history: str, na_text: str) -> dict:
+    """HBsAg / Anti-HCV：左數第 2 碼為檢驗結果，第 3 碼為病史。"""
+    return {
+        '000': f'沒有檢驗，亦無{history}。',
+        '001': f'沒有檢驗，但病歷記載曾有{history}。',
+        '010': f'檢驗結果為陰性，且無{history}。',
+        '011': f'檢驗結果為陰性，但病歷記載曾有{history}。',
+        '020': '檢驗結果為陽性。',
+        '988': na_text,
+        '999': '不詳。',
+    }
+
+
+_ZH_ACUTE_HEP = {
+    '001': '無急性肝炎發作（GOT/GPT 未超過正常值上限 5 倍）。',
+    '002': '有急性肝炎發作（GOT 或 GPT 超過正常值上限 5 倍）。',
+    '999': '病歷未記載或不詳；沒有 GOT 或 GPT 任一項檢驗。',
+}
+
+_ZH_LYM_ESR_HEAD = {
+    **{f'{i:02d}': f'ESR {i} mm/h。' for i in range(1, 51)},
+    '51': 'ESR 數值 >50 mm/h。',
+    '98': '不適用：非 ICD-O-3 M-9650-9663 者。',
+    '99': '病歷未記載、不詳或沒有檢驗。',
+}
+_ZH_LYM_IPS_TAIL = {
+    **{str(i): f'IPS {i} 分。' for i in range(8)},
+    '8': '不適用：非 ICD-O-3 M-9650-9663 者。',
+    '9': '病歷未記載、不詳或沒有評估。',
+}
+
+
+def _zh_lymphoma(ssf_key: str, code: str) -> str:
+    c = str(code).strip()
+    if ssf_key == 'SSF1':
+        return _ZH_LYM_HIV.get(c, '')
+    if ssf_key == 'SSF2':
+        return _ZH_LYM_B.get(c, '')
+    if ssf_key in ('SSF3', 'SSF4'):
+        label = 'IPI' if ssf_key == 'SSF3' else 'FLIPI'
+        bands = _ZH_LYM_IPI_BAND if ssf_key == 'SSF3' else _ZH_LYM_FLIPI_BAND
+        if c.isdigit() and 0 <= int(c) <= 5:
+            return f'{label} {int(c)} 分。'
+        return bands.get(c, '')
+    if ssf_key == 'SSF5':
+        return _ZH_LYM_HTLV1.get(c, '')
+    if ssf_key == 'SSF6':
+        return _ZH_LYM_CMV.get(c, '')
+    if ssf_key == 'SSF7':
+        return _zh_hepatitis('HBsAg', 'B 肝帶原史', _ZH_LYM_NA_HAEM).get(c, '')
+    if ssf_key == 'SSF8':
+        return _zh_hepatitis('Anti-HCV', 'C 型肝炎感染史', _ZH_LYM_NA_HAEM).get(c, '')
+    if ssf_key == 'SSF9':
+        return {**_ZH_ACUTE_HEP, '988': _ZH_LYM_NA_HAEM}.get(c, '')
+    if ssf_key == 'SSF10' and len(c) == 3:
+        head = _ZH_LYM_ESR_HEAD.get(c[:2])
+        tail = _ZH_LYM_IPS_TAIL.get(c[2])
+        if head and tail:
+            return f'第1-2碼 {head} 第3碼 {tail}'
+    return ''
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 白血病（碼冊 pp.207-222）
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ZH_LEU_NA_MARROW = '不適用：ICD-O-3 M-9811-9837（C42.0、C42.1、C42.4 除外）。'
+
+# 碼冊 pp.209-212 的染色體／分子生物學定義本身即以英文基因名稱書寫，
+# 中文僅出現在 000／090-092 與 8XX 說明，因此此處沿用碼冊原文。
+_ZH_LEU_BUCKETS = {
+    '090': '一種異常，其他未列之變化；或二種異常，其中一種（或二種皆）非表列。',
+    '091': '同時有兩種（含）以上表列之變化。',
+    '092': '三種（含）以上變化。',
+}
+
+
+def _zh_leukemia_study(code: str, mapping, kind: str) -> str:
+    c = str(code).strip()
+    if c == '988':
+        return _ZH_LEU_NA_MARROW
+    if c == '998':
+        return f'有執行{kind}，但結果無法判斷。'
+    if c == '999':
+        return f'病歷未記載或不詳，或未執行{kind}。'
+    post = c.startswith('8') and len(c) == 3
+    base = f'0{c[1:]}' if post else c
+    if base in _ZH_LEU_BUCKETS:
+        text = _ZH_LEU_BUCKETS[base]
+    else:
+        try:
+            text = mapping[int(base)]
+        except (KeyError, ValueError):
+            return ''
+        text = '正常。' if base == '000' else f'{text}。'
+    if post:
+        return f'{text}（化學治療／免疫治療／標靶治療後之{kind}）'
+    return text
+
+
+_ZH_LEU_INDUCTION = {
+    '001': '完全緩解 (complete remission)。',
+    '002': '部份緩解 (partial remission)。',
+    '988': '不適用。',
+    '990': '首次前導治療後之反應評估非部分 (002) 或完全緩解 (001)，'
+           '例如 no remission、incomplete remission 等。',
+    '999': '病歷未記載或不詳。',
+}
+
+_ZH_LEU_AGVHD = {
+    '000': '沒有發生過 aGVHD。',
+    '010': '有發生過 aGVHD 但嚴重度不明。',
+    '011': '有發生過第一級 aGVHD。',
+    '012': '有發生過第二級 aGVHD。',
+    '013': '有發生過第三級 aGVHD。',
+    '014': '有發生過第四級 aGVHD。',
+    '988': '不適用：未接受異體幹細胞移植，或接受自體幹細胞移植。',
+    '999': '病歷未記載或不詳。',
+}
+
+_ZH_LEU_CGVHD = {
+    '000': '沒有發生 cGVHD。',
+    '001': '發生 cGVHD 但嚴重度不明。',
+    '002': '發生侷限期 (limited stage) cGVHD。',
+    '003': '發生廣泛期 (extensive stage) cGVHD。',
+    '988': '不適用：未接受異體幹細胞移植。',
+    '999': '病歷未記載或不詳。',
+}
+
+_ZH_LEU_MRD_HEAD = {
+    **{f'{i:02d}': f'自診斷日起至申報前最後一次分子檢驗之實足月數 {i} 個月。'
+       for i in range(25)},
+    '98': '不適用：非 ICD-O-3 M-9875/3；未使用藥物治療。',
+    '99': '病歷未記載或不詳；間隔超過 24 個月；未執行分子檢驗。',
+}
+_ZH_LEU_MRD_TAIL = {
+    '0': 'No log reduction (=0) 或上升。',
+    '1': '0 < log reduction < 1。',
+    '2': '1 ≦ log reduction < 2。',
+    '3': '2 ≦ log reduction < 3。',
+    '4': '3 ≦ log reduction < 4。',
+    '5': 'log reduction ≧ 4。',
+    '6': 'log reduction 僅描述為 undetectable，且未描述數值。',
+    '8': '不適用：非 ICD-O-3 M-9875/3；未使用藥物治療。',
+    '9': '病歷未記載或不詳；間隔超過 24 個月；未執行分子檢驗。',
+}
+
+
+def _zh_leukemia(ssf_key: str, code: str) -> str:
+    from tcr_decoder.ssf_registry import _LEU_KARYOTYPE, _LEU_MOLECULAR
+    c = str(code).strip()
+    if ssf_key == 'SSF1':
+        return _zh_leukemia_study(c, _LEU_KARYOTYPE, '染色體檢查')
+    if ssf_key == 'SSF2':
+        return _zh_leukemia_study(c, _LEU_MOLECULAR, '分子生物學檢查')
+    if ssf_key == 'SSF3':
+        return _ZH_LEU_INDUCTION.get(c, '')
+    if ssf_key == 'SSF4':
+        return _ZH_LEU_AGVHD.get(c, '')
+    if ssf_key == 'SSF5':
+        return _ZH_LEU_CGVHD.get(c, '')
+    if ssf_key == 'SSF6':
+        return _ZH_LEU_CMV.get(c, '')
+    if ssf_key == 'SSF7':
+        return _zh_hepatitis('HBsAg', 'B 肝帶原史', _ZH_LEU_NA_MARROW).get(c, '')
+    if ssf_key == 'SSF8':
+        return _zh_hepatitis('Anti-HCV', 'C 型肝炎感染史', _ZH_LEU_NA_MARROW).get(c, '')
+    if ssf_key == 'SSF9':
+        return {**_ZH_ACUTE_HEP, '988': _ZH_LEU_NA_MARROW}.get(c, '')
+    if ssf_key == 'SSF10' and len(c) == 3:
+        head = _ZH_LEU_MRD_HEAD.get(c[:2])
+        tail = _ZH_LEU_MRD_TAIL.get(c[2])
+        if head and tail:
+            return f'第1-2碼 {head} 第3碼 {tail}'
+    return ''
+
+
 _ZH_BY_GROUP = {
     'breast': _zh_breast,
     'prostate': _zh_prostate,
@@ -1202,6 +1446,8 @@ _ZH_BY_GROUP = {
     'pancreas': _zh_pancreas,
     'ovary': _zh_ovary,
     'bladder': _zh_bladder,
+    'lymphoma': _zh_lymphoma,
+    'leukemia': _zh_leukemia,
 }
 
 
@@ -1433,6 +1679,37 @@ _BLADDER_CLASSES: Dict[str, Tuple[str, ...]] = {
     **{f'SSF{i}': ('988',) for i in range(4, 11)},
 }
 
+_LYMPHOMA_CLASSES: Dict[str, Tuple[str, ...]] = {
+    'SSF1':  ('001', '002', '988', '999'),
+    'SSF2':  ('000', '010', '988', '999'),
+    'SSF3':  ('000', '003', '005', '988', '990', '994', '999'),
+    'SSF4':  ('000', '002', '005', '988', '990', '992', '999'),
+    'SSF5':  ('000', '001', '002', '988', '999'),
+    'SSF6':  ('000', '001', '002', '003', '988', '999'),
+    'SSF7':  ('000', '001', '010', '011', '020', '988', '999'),
+    'SSF8':  ('000', '001', '010', '011', '020', '988', '999'),
+    'SSF9':  ('001', '002', '988', '999'),
+    # One representative per branch of the composite: a real ESR, the >50
+    # ceiling, and each of the two 2-character sentinels, crossed with a
+    # score, the not-applicable digit and the unknown digit.
+    'SSF10': ('253', '510', '517', '988', '999', '983', '992'),
+}
+
+_LEUKEMIA_CLASSES: Dict[str, Tuple[str, ...]] = {
+    'SSF1':  ('000', '001', '013', '051', '090', '092', '801', '892',
+              '988', '998', '999'),
+    'SSF2':  ('000', '010', '013', '051', '055', '090', '092', '803', '892',
+              '988', '998', '999'),
+    'SSF3':  ('001', '002', '988', '990', '999'),
+    'SSF4':  ('000', '010', '011', '014', '988', '999'),
+    'SSF5':  ('000', '001', '002', '003', '988', '999'),
+    'SSF6':  ('001', '002', '003', '988', '999'),
+    'SSF7':  ('000', '001', '010', '011', '020', '988', '999'),
+    'SSF8':  ('000', '001', '010', '011', '020', '988', '999'),
+    'SSF9':  ('001', '002', '988', '999'),
+    'SSF10': ('000', '115', '246', '988', '999', '983', '992'),
+}
+
 EQUIVALENCE_CLASSES: Dict[str, Dict[str, Tuple[str, ...]]] = {
     'breast': _BREAST_CLASSES,
     'esophagus': _ESOPHAGUS_CLASSES,
@@ -1448,6 +1725,8 @@ EQUIVALENCE_CLASSES: Dict[str, Dict[str, Tuple[str, ...]]] = {
     'prostate': _PROSTATE_CLASSES,
     'endometrium': _ENDOMETRIUM_CLASSES,
     'thyroid': _THYROID_CLASSES,
+    'lymphoma': _LYMPHOMA_CLASSES,
+    'leukemia': _LEUKEMIA_CLASSES,
 }
 
 

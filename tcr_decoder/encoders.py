@@ -361,6 +361,29 @@ def encode_lnpositive(series: pd.Series) -> pd.Series:
     return series.apply(_encode)
 
 
+def encode_lnexam(series: pd.Series) -> pd.Series:
+    """Inverse of decode_lnexam(). Codebook: Longform-Manual p.127-129."""
+    from tcr_decoder.decoders import decode_lnexam
+
+    probe = pd.Series(['00', '90', '95', '96', '97', '98', '99'])
+    special_rev = {label: code
+                   for code, label in zip(probe, decode_lnexam(probe))}
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if v in special_rev:
+            return special_rev[v]
+        # LNEXAM is a 2-character field, so a plain count is written back
+        # zero-padded: 5 -> '05'.
+        if v.isdigit() and len(v) < 2:
+            return v.zfill(2)
+        return v
+
+    return series.apply(_encode)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # EBRT technique (additive bitmask) -- structural
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1280,3 +1303,38 @@ def encode_ca125(series: pd.Series, timing: str) -> pd.Series:
         return _reverse_unlisted(v)
 
     return series.apply(_encode)
+
+
+def _encode_composite(series: pd.Series, head_map: dict, tail_map: dict,
+                      head_width: int) -> pd.Series:
+    """Inverse of a "head label; tail label" composite SSF decoder."""
+    head_code = {label: code for code, label in head_map.items()}
+    tail_code = {label: code for code, label in tail_map.items()}
+
+    def _encode(v):
+        v = _clean(v)
+        if not v:
+            return ''
+        if '; ' in v:
+            head, tail = v.split('; ', 1)
+            h, t = head_code.get(head), tail_code.get(tail)
+            if h is not None and t is not None:
+                return f'{h}{t}'
+        m = re.match(r'^Code (\S+)$', v)
+        if m:
+            return m.group(1)
+        return _reverse_unlisted(v)
+
+    return series.apply(_encode)
+
+
+def encode_lym_esr_ips(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_lym_esr_ips() (lymphoma SSF10, manual p.205-206)."""
+    from tcr_decoder.ssf_registry import _LYM_ESR_HEAD, _LYM_IPS_TAIL
+    return _encode_composite(series, _LYM_ESR_HEAD, _LYM_IPS_TAIL, 2)
+
+
+def encode_leu_mrd(series: pd.Series) -> pd.Series:
+    """Inverse of _decode_leu_mrd() (leukemia SSF10, manual p.221-222)."""
+    from tcr_decoder.ssf_registry import _LEU_MRD_HEAD, _LEU_MRD_TAIL
+    return _encode_composite(series, _LEU_MRD_HEAD, _LEU_MRD_TAIL, 2)

@@ -58,6 +58,56 @@ class TestDetectCancerGroup:
         assert detect_cancer_group(code) == 'generic'
 
 
+class TestMorphologyKeyedGroups:
+    """Lymphoma and leukemia are chosen by MCODE, not by site (pp.194, 207)."""
+
+    @pytest.mark.parametrize('site,morph,expected', [
+        # Nodal and extranodal lymphomas: the site is irrelevant, and a
+        # gastric MALT lymphoma must NOT come out as a stomach cancer.
+        ('C77.9', '9680/3', 'lymphoma'),   # DLBCL, lymph node
+        ('C16.9', '9699/3', 'lymphoma'),   # MALT lymphoma of the stomach
+        ('C50.9', '9680/3', 'lymphoma'),   # primary breast lymphoma
+        ('C77.0', '9663/3', 'lymphoma'),   # Hodgkin, nodular sclerosis
+        ('C77.2', '9690/3', 'lymphoma'),   # follicular
+        # Leukemias.
+        ('C42.1', '9861/3', 'leukemia'),   # AML
+        ('C42.1', '9875/3', 'leukemia'),   # CML, the only SSF10 collector
+        ('C42.0', '9823/3', 'leukemia'),   # CLL
+        ('C42.4', '9989/3', 'leukemia'),
+    ])
+    def test_morphology_decides(self, site, morph, expected):
+        assert detect_cancer_group(site, morph) == expected
+
+    @pytest.mark.parametrize('site,expected', [
+        # M-9811-9837 is the one range the manual splits on the SITE: in
+        # marrow / blood / haematopoietic system it is a leukemia, anywhere
+        # else the same morphology is a lymphoma.
+        ('C42.0', 'leukemia'),
+        ('C42.1', 'leukemia'),
+        ('C42.4', 'leukemia'),
+        ('C42.2', 'lymphoma'),   # spleen
+        ('C77.9', 'lymphoma'),
+    ])
+    def test_m9811_9837_splits_on_the_site(self, site, expected):
+        assert detect_cancer_group(site, '9835/3') == expected
+
+    def test_a_solid_tumour_morphology_leaves_the_site_in_charge(self):
+        assert detect_cancer_group('C50.1', '8500/3') == 'breast'
+
+    def test_site_alone_cannot_reach_the_haematolymphoid_profiles(self):
+        """Without MCODE there is nothing to route on -- and we say so."""
+        assert detect_cancer_group('C77.9') == 'generic'
+
+    def test_series_detection_uses_the_morphology_column(self):
+        sites = pd.Series(['C77.9', 'C77.0', 'C16.9'])
+        morphs = pd.Series(['9680/3', '9680/3', '9699/3'])
+        assert detect_cancer_group_from_series(sites, morphs) == 'lymphoma'
+        # Same sites without the morphology: two nodal sites route nowhere and
+        # the gastric lymphoma would have been read as a stomach cancer.
+        with pytest.warns(UserWarning, match='Mixed cancer registry'):
+            assert detect_cancer_group_from_series(sites) == 'generic'
+
+
 class TestDetectCancerGroupFromSeries:
     """Bulk series detection."""
 

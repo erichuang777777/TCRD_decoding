@@ -1092,6 +1092,160 @@ for _i in range(4, 11):
     setattr(_BladderFields, f'ssf{_i}', staticmethod(lambda rng: '988'))
 
 
+class _LymphomaFields:
+    """Lymphoma SSF distributions (manual pp.194-206).
+
+    Unlike every other group here, the profile is chosen by MCODE, not by
+    TCODE1, so the morphology codes below all have to be real lymphoma
+    M-codes or the decoder would route the case somewhere else.
+    """
+
+    TCODE1_CHOICES = ['C77.9', 'C77.0', 'C77.2', 'C16.9', 'C42.2']
+    TCODE1_P       = [0.44,    0.18,    0.16,    0.12,    0.10]
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.92, 0.08]
+    # DLBCL, follicular, Hodgkin (nodular sclerosis / mixed), MALT, T-cell.
+    MCODE_CHOICES = ['9680', '9690', '9663', '9650', '9699', '9702']
+    MCODE_P       = [0.40,   0.16,   0.14,   0.10,   0.12,   0.08]
+    PSTAGE_CHOICES = ['I', 'II', 'III', 'IV']
+    PSTAGE_P       = [0.22, 0.28,  0.24,  0.26]
+
+    @staticmethod
+    def ssf1(rng):
+        return str(rng.choice(['001', '002', '988', '999'],
+                              p=[0.72, 0.05, 0.08, 0.15]))
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '010', '988', '999'],
+                              p=[0.34, 0.16, 0.42, 0.08]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['000', '001', '002', '003', '004', '005',
+                               '988', '990', '991', '992', '993', '994', '999'],
+                              p=[0.10, 0.16, 0.18, 0.13, 0.06, 0.02,
+                                 0.14, 0.03, 0.03, 0.03, 0.03, 0.02, 0.07]))
+
+    @staticmethod
+    def ssf4(rng):
+        return str(rng.choice(['000', '001', '002', '003', '004', '005',
+                               '988', '990', '991', '992', '999'],
+                              p=[0.03, 0.04, 0.05, 0.03, 0.02, 0.01,
+                                 0.68, 0.02, 0.02, 0.02, 0.08]))
+
+    @staticmethod
+    def ssf5(rng):
+        return str(rng.choice(['000', '001', '002', '988', '999'],
+                              p=[0.42, 0.24, 0.02, 0.08, 0.24]))
+
+    @staticmethod
+    def ssf6(rng):
+        return str(rng.choice(['000', '001', '002', '003', '988', '999'],
+                              p=[0.40, 0.30, 0.08, 0.04, 0.08, 0.10]))
+
+    @staticmethod
+    def _serology(rng):
+        return str(rng.choice(['000', '001', '010', '011', '020', '988', '999'],
+                              p=[0.10, 0.03, 0.58, 0.09, 0.10, 0.05, 0.05]))
+
+    @staticmethod
+    def ssf9(rng):
+        return str(rng.choice(['001', '002', '988', '999'],
+                              p=[0.74, 0.10, 0.06, 0.10]))
+
+    @staticmethod
+    def ssf10(rng):
+        # Non-Hodgkin cases (the majority) code the whole field not-applicable.
+        if rng.random() < 0.62:
+            return '988'
+        esr = int(rng.integers(1, 52))
+        ips = int(rng.integers(0, 8))
+        return f'{esr:02d}{ips}'
+
+
+_LymphomaFields.ssf7 = staticmethod(_LymphomaFields._serology)
+_LymphomaFields.ssf8 = staticmethod(_LymphomaFields._serology)
+
+
+class _LeukemiaFields:
+    """Leukemia SSF distributions (manual pp.207-222). Keyed by MCODE."""
+
+    TCODE1_CHOICES = ['C42.1', 'C42.0', 'C42.4']
+    TCODE1_P       = [0.72,    0.20,    0.08]
+    LAT_CHOICES = ['0', '9']
+    LAT_P       = [0.94, 0.06]
+    # AML, ALL, CLL, CML (9875 is the only one that collects SSF10).
+    MCODE_CHOICES = ['9861', '9835', '9823', '9875', '9945', '9989']
+    MCODE_P       = [0.34,   0.18,   0.20,   0.14,   0.08,   0.06]
+    PSTAGE_CHOICES = ['88']
+    PSTAGE_P       = [1.0]
+
+    @staticmethod
+    def ssf1(rng):
+        return str(rng.choice(['000', '001', '003', '013', '021', '051',
+                               '061', '090', '091', '092', '801', '851',
+                               '890', '988', '998', '999'],
+                              p=[0.22, 0.05, 0.04, 0.02, 0.03, 0.10,
+                                 0.03, 0.14, 0.04, 0.07, 0.02, 0.02,
+                                 0.02, 0.04, 0.06, 0.10]))
+
+    @staticmethod
+    def ssf2(rng):
+        return str(rng.choice(['000', '003', '008', '010', '013', '021',
+                               '051', '052', '090', '091', '092', '803',
+                               '851', '988', '998', '999'],
+                              p=[0.20, 0.04, 0.06, 0.06, 0.02, 0.03,
+                                 0.11, 0.04, 0.13, 0.04, 0.04, 0.02,
+                                 0.02, 0.04, 0.05, 0.10]))
+
+    @staticmethod
+    def ssf3(rng):
+        return str(rng.choice(['001', '002', '988', '990', '999'],
+                              p=[0.44, 0.14, 0.24, 0.10, 0.08]))
+
+    @staticmethod
+    def ssf4(rng):
+        return str(rng.choice(['000', '010', '011', '012', '013', '014',
+                               '988', '999'],
+                              p=[0.14, 0.03, 0.05, 0.04, 0.02, 0.01,
+                                 0.63, 0.08]))
+
+    @staticmethod
+    def ssf5(rng):
+        return str(rng.choice(['000', '001', '002', '003', '988', '999'],
+                              p=[0.16, 0.03, 0.06, 0.04, 0.63, 0.08]))
+
+    @staticmethod
+    def ssf6(rng):
+        return str(rng.choice(['001', '002', '003', '988', '999'],
+                              p=[0.52, 0.14, 0.06, 0.06, 0.22]))
+
+    @staticmethod
+    def _serology(rng):
+        return str(rng.choice(['000', '001', '010', '011', '020', '988', '999'],
+                              p=[0.09, 0.03, 0.60, 0.09, 0.09, 0.05, 0.05]))
+
+    @staticmethod
+    def ssf9(rng):
+        return str(rng.choice(['001', '002', '988', '999'],
+                              p=[0.70, 0.14, 0.06, 0.10]))
+
+    @staticmethod
+    def ssf10(rng):
+        # Only CML (M-9875/3) collects this field.
+        if rng.random() < 0.84:
+            return '988'
+        months = int(rng.integers(0, 25))
+        band = str(rng.choice(['0', '1', '2', '3', '4', '5', '6'],
+                              p=[0.08, 0.14, 0.18, 0.20, 0.18, 0.16, 0.06]))
+        return f'{months:02d}{band}'
+
+
+_LeukemiaFields.ssf7 = staticmethod(_LeukemiaFields._serology)
+_LeukemiaFields.ssf8 = staticmethod(_LeukemiaFields._serology)
+
+
 _CANCER_FIELDS_MAP = {
     'breast':      _BreastFields,
     'lung':        _LungFields,
@@ -1107,6 +1261,8 @@ _CANCER_FIELDS_MAP = {
     'pancreas':    _PancreasFields,
     'ovary':       _OvaryFields,
     'bladder':     _BladderFields,
+    'lymphoma':    _LymphomaFields,
+    'leukemia':    _LeukemiaFields,
 }
 
 

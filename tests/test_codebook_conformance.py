@@ -25,8 +25,8 @@ import pytest
 from tcr_decoder.code_ranges import (
     CODE_RANGES, LONGFORM, SUPPORTED_GROUPS, field_width, is_legal_code,
 )
-from tcr_decoder.decoders import decode_lnpositive
-from tcr_decoder.encoders import encode_lnpositive
+from tcr_decoder.decoders import decode_lnexam, decode_lnpositive
+from tcr_decoder.encoders import encode_lnexam, encode_lnpositive
 from tcr_decoder.ssf_registry import _generic_ssf, get_ssf_profile
 from tcr_decoder.encoders import encode_generic_ssf
 
@@ -135,13 +135,46 @@ def test_prostate_biopsy_and_prostatectomy_specimens_are_distinguishable():
             assert biopsy != surgery, f'{biopsy_key}/{surgery_key} code {code}'
 
 
-def test_lnpositive_legal_codes_roundtrip():
-    width, codes, ref = LONGFORM['LN_POSITI']
+# Longform structural fields with a real decode/encode pair, checked the same
+# way as the SSFs: whole legal range, injective decode, exact round trip.
+LONGFORM_CODECS = {
+    'LNEXAM':    (decode_lnexam, encode_lnexam),
+    'LN_POSITI': (decode_lnpositive, encode_lnpositive),
+}
+
+
+@pytest.mark.parametrize('field', sorted(LONGFORM_CODECS), ids=sorted(LONGFORM_CODECS))
+def test_longform_structural_field_roundtrips_over_its_whole_range(field):
+    width, codes, ref = LONGFORM[field]
+    decode, encode = LONGFORM_CODECS[field]
     raw = pd.Series(sorted(codes), dtype=object)
-    encoded = encode_lnpositive(decode_lnpositive(raw))
-    bad = [(c, e) for c, e in zip(raw, encoded.astype(str)) if c != e]
-    assert not bad, f'LN_POSITI ({ref}): {bad[:5]}'
-    assert all(len(e) == width for e in encoded.astype(str))
+    decoded = decode(raw)
+    encoded = encode(decoded).astype(str)
+
+    bad = [(c, e) for c, e in zip(raw, encoded) if c != e]
+    assert not bad, f'{field} ({ref}): {bad[:5]}'
+    assert all(len(e) == width for e in encoded), f'{field} ({ref}): wrong width'
+
+
+@pytest.mark.parametrize('field', sorted(LONGFORM_CODECS), ids=sorted(LONGFORM_CODECS))
+def test_longform_structural_field_decode_is_injective(field):
+    """Two sentinels sharing one label is how LNEXAM lost four meanings."""
+    _, codes, ref = LONGFORM[field]
+    decode, _ = LONGFORM_CODECS[field]
+    raw = pd.Series(sorted(codes), dtype=object)
+    seen, collisions = {}, []
+    for code, label in zip(raw, decode(raw)):
+        if label in seen:
+            collisions.append((seen[label], code, label))
+        seen[label] = code
+    assert not collisions, f'{field} ({ref}): {collisions[:5]}'
+
+
+def test_lnexam_sentinels_are_five_distinct_situations():
+    """Regression: 95-99 used to be blanked out together as "unknown"."""
+    decoded = decode_lnexam(pd.Series(['95', '96', '97', '98', '99']))
+    assert len(set(decoded)) == 5
+    assert all(d for d in decoded)
 
 
 def test_data_dictionary_describes_every_ssf_column():

@@ -64,6 +64,10 @@ class SSFProfile:
     site_codes: Tuple[str, ...]   # ICD-O-3 prefixes (e.g., ('C50',))
     fields: Dict[str, SSFFieldDef]  # 'SSF1'…'SSF10' → SSFFieldDef
     notes: str = ''
+    # Inclusive ICD-O-3 morphology ranges, for the two groups the manual keys
+    # off histology instead of topography (lymphoma, leukemia). Empty for
+    # every site-defined group.
+    morphology_codes: Tuple[Tuple[int, int], ...] = ()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1598,6 +1602,369 @@ def _decode_scc_antigen_normal(series: pd.Series) -> pd.Series:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Lymphoma SSF decoders (Cancer-SSF-Manual pp.194-212)
+#
+# Lymphoma and leukemia are the only two groups the manual keys off the
+# MORPHOLOGY code rather than the primary site, and M-9811-9837 splits between
+# them on the site: bone marrow / blood (C42.0, C42.1, C42.4) makes it a
+# leukemia, anywhere else a lymphoma. See detect_cancer_group().
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LYM_NA_HAEM = ('Not applicable (ICD-O-3 M-9811-9837 arising in blood, bone '
+                'marrow or the haematopoietic system)')
+
+_LYM_HIV_MAP = CodeMap({
+    1:   'HIV negative',
+    2:   'HIV positive',
+    988: _LYM_NA_HAEM,
+    999: 'HIV status not documented, or never tested',
+}, width=3)
+
+_LYM_B_SYMPTOMS_MAP = CodeMap({
+    0:   'No B symptoms',
+    10:  'At least one B symptom (fever, night sweats or weight loss)',
+    988: 'Not applicable (not a Hodgkin lymphoma, M-9650-9663)',
+    999: 'B symptoms unknown',
+}, width=3)
+
+# SSF3 and SSF4 both use 990-99x for "only a risk band was recorded", but the
+# bands are NOT the same: IPI has four bands plus a plain "intermediate",
+# FLIPI has three. Two separate maps, exactly as in the manual.
+_LYM_IPI_MAP = CodeMap({
+    0:   'IPI 0 (no adverse factor)',
+    1:   'IPI 1',
+    2:   'IPI 2',
+    3:   'IPI 3',
+    4:   'IPI 4',
+    5:   'IPI 5 (all five adverse factors)',
+    988: 'Not applicable (Hodgkin lymphoma, mycosis fungoides/Sezary, or a '
+         'follicular lymphoma scored only by FLIPI)',
+    990: 'Recorded as low risk only, no IPI score',
+    991: 'Recorded as low-intermediate risk only, no IPI score',
+    992: 'Recorded as high-intermediate risk only, no IPI score',
+    993: 'Recorded as high risk only, no IPI score',
+    994: 'Recorded as intermediate risk only, no IPI score',
+    999: 'IPI not documented, unknown, or never assessed',
+}, width=3)
+
+_LYM_FLIPI_MAP = CodeMap({
+    0:   'FLIPI 0 (no adverse factor)',
+    1:   'FLIPI 1',
+    2:   'FLIPI 2',
+    3:   'FLIPI 3',
+    4:   'FLIPI 4',
+    5:   'FLIPI 5 (all five adverse factors)',
+    988: 'Not applicable (not a follicular lymphoma, M-95973 / 96903-96983)',
+    990: 'Recorded as low risk only, no FLIPI score',
+    991: 'Recorded as intermediate risk only, no FLIPI score',
+    992: 'Recorded as high risk only, no FLIPI score',
+    999: 'FLIPI not documented, unknown, or never assessed',
+}, width=3)
+
+# The 編碼範圍 line on p.200 reads "988" alone, but the code table on the same
+# page defines 000/001/002/999 as well. Both are honoured: a submission
+# containing a real HTLV-1 result still decodes and round-trips.
+_LYM_HTLV1_MAP = CodeMap({
+    0:   'HTLV-1 not tested',
+    1:   'HTLV-1 negative',
+    2:   'HTLV-1 positive',
+    988: _LYM_NA_HAEM,
+    999: 'HTLV-1 status not documented or unknown',
+}, width=3)
+
+# Lymphoma SSF6 has a 000 ("not tested") that leukemia SSF6 does not -- in
+# leukemia "not tested" is folded into 999. Separate maps, per pp.201/217.
+_LYM_CMV_MAP = CodeMap({
+    0:   'CMV not tested',
+    1:   'No CMV infection',
+    2:   'CMV infection without organ disease',
+    3:   'CMV infection causing disease',
+    988: 'Not applicable',
+    999: 'CMV status not documented or unknown',
+}, width=3)
+
+_LEU_CMV_MAP = CodeMap({
+    1:   'No CMV infection',
+    2:   'CMV infection without organ disease',
+    3:   'CMV infection causing disease',
+    988: 'Not applicable (ICD-O-3 M-9811-9837 outside C42.0/C42.1/C42.4)',
+    999: 'CMV status not documented, unknown, or never tested',
+}, width=3)
+
+
+def _hepatitis_map(virus: str, carrier_phrase: str, na_text: str) -> CodeMap:
+    """HBsAg / anti-HCV: 2nd digit = test result, 3rd digit = history (p.202)."""
+    return CodeMap({
+        0:   f'Not tested, and no history of {carrier_phrase}',
+        1:   f'Not tested, but the record notes a history of {carrier_phrase}',
+        10:  f'{virus} negative, and no history of {carrier_phrase}',
+        11:  f'{virus} negative, but the record notes a history of {carrier_phrase}',
+        20:  f'{virus} positive',
+        988: na_text,
+        999: f'{virus} status unknown',
+    }, width=3)
+
+
+_LYM_HBSAG_MAP = _hepatitis_map('HBsAg', 'hepatitis B carriage', _LYM_NA_HAEM)
+_LYM_ANTIHCV_MAP = _hepatitis_map('Anti-HCV', 'hepatitis C infection', _LYM_NA_HAEM)
+
+_LYM_ACUTE_HEP_MAP = CodeMap({
+    1:   'No acute hepatitis flare (AST/ALT never exceeded 5x the upper limit)',
+    2:   'Acute hepatitis flare (AST or ALT exceeded 5x the upper limit)',
+    988: _LYM_NA_HAEM,
+    999: 'Unknown, or neither AST nor ALT was ever measured',
+}, width=3)
+
+# SSF10 (p.205-206) is a composite: characters 1-2 carry the ESR, character 3
+# the IPS score.
+_LYM_ESR_HEAD = {
+    **{f'{i:02d}': f'ESR {i} mm/h' for i in range(1, 51)},
+    '51': 'ESR >50 mm/h',
+    '98': 'ESR not applicable (not a Hodgkin lymphoma, M-9650-9663)',
+    '99': 'ESR not documented, unknown or not measured',
+}
+_LYM_IPS_TAIL = {
+    **{str(i): f'IPS {i}' for i in range(8)},
+    '8': 'IPS not applicable (not a Hodgkin lymphoma, M-9650-9663)',
+    '9': 'IPS not documented, unknown or not assessed',
+}
+
+
+def _decode_lym_esr_ips(series: pd.Series) -> pd.Series:
+    """Lymphoma SSF10: ESR (chars 1-2) + IPS score (char 3), p.205-206."""
+    def _d(val):
+        if pd.isna(val) or str(val).strip() in ('', 'nan'):
+            return ''
+        s = strip_float_suffix(str(val).strip())
+        if len(s) == 3 and s[:2] in _LYM_ESR_HEAD and s[2] in _LYM_IPS_TAIL:
+            return f'{_LYM_ESR_HEAD[s[:2]]}; {_LYM_IPS_TAIL[s[2]]}'
+        return f'Code {s}'
+    return series.apply(_d)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Leukemia SSF decoders (Cancer-SSF-Manual pp.207-228)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LEU_NA_MARROW = ('Not applicable (ICD-O-3 M-9811-9837 outside C42.0/C42.1/'
+                  'C42.4)')
+
+# p.209-210. Codes 001-061 are the named karyotypes; 090-092 the "other /
+# two / complex" buckets.
+_LEU_KARYOTYPE = {
+    0:  'Normal karyotype',
+    1:  'AML with t(8;21)(q22;q22.1)',
+    2:  'AML with inv(16)(p13.1q22) or t(16;16)(p13.1;q22)',
+    3:  'Acute promyelocytic leukemia with t(15;17)',
+    4:  'AML with t(9;11)(p21.3;q23.3) or t(9;11)(p22;q23)',
+    5:  'AML with t(6;9)(p23;q34.1)',
+    6:  'AML with inv(3)(q21.3q26.2) or t(3;3)(q21.3;q26.2)',
+    7:  'AML (megakaryoblastic) with t(1;22)(p13.3;q13.1)',
+    13: 'AML with t(9;22)(q34;q11)',
+    21: 'B lymphoblastic leukemia / lymphoma with t(9;22)(q34.1;q11.2)',
+    22: 'B lymphoblastic leukemia / lymphoma with t(v;11q23.3)',
+    23: 'B lymphoblastic leukemia / lymphoma with t(12;21)(p13.2;q22.1)',
+    24: 'B lymphoblastic leukemia / lymphoma with hyperdiploidy',
+    25: 'B lymphoblastic leukemia / lymphoma with hypodiploidy',
+    26: 'B lymphoblastic leukemia / lymphoma with t(5;14)(q31.1;q32.1)',
+    27: 'B lymphoblastic leukemia / lymphoma with t(1;19)(q23;p13.3)',
+    41: 'Mixed phenotype acute leukemia with t(9;22)(q34.1;q11.2)',
+    42: 'Mixed phenotype acute leukemia with t(v;11q23.3)',
+    51: 'Chronic myelogenous leukemia, t(9;22)',
+    61: 'Myelodysplastic syndrome with isolated del(5q)',
+    90: 'One abnormality not listed above, or two of which at least one is '
+        'not listed above',
+    91: 'Two of the listed abnormalities together',
+    92: 'Complex karyotype (three or more changes)',
+}
+
+# p.211-212.
+_LEU_MOLECULAR = {
+    0:  'Normal molecular study',
+    1:  'AML with RUNX1-RUNX1T1',
+    2:  'AML with CBFB-MYH11',
+    3:  'Acute promyelocytic leukemia with PML-RARA',
+    4:  'AML with KMT2A-MLLT3',
+    5:  'AML with DEK-NUP214',
+    6:  'AML with GATA2, MECOM',
+    7:  'AML (megakaryoblastic) with RBM15-MKL1',
+    8:  'AML with mutated NPM1',
+    9:  'AML with biallelic mutation of CEBPA',
+    10: 'AML with mutated FLT3/ITD',
+    11: 'AML with mutated FLT3/TKD',
+    12: 'AML with MLL-PTD (partial tandem duplication)',
+    13: 'AML with BCR-ABL1',
+    21: 'B lymphoblastic leukemia / lymphoma with BCR-ABL1',
+    22: 'B lymphoblastic leukemia / lymphoma with KMT2A rearrangement',
+    23: 'B lymphoblastic leukemia / lymphoma with ETV6-RUNX1 (TEL-AML1)',
+    24: 'B lymphoblastic leukemia / lymphoma with IGH/IL3',
+    25: 'B lymphoblastic leukemia / lymphoma with TCF3-PBX1 (E2A-PBX1)',
+    41: 'Mixed phenotype acute leukemia with BCR-ABL1',
+    42: 'Mixed phenotype acute leukemia with KMT2A rearrangement',
+    51: 'Chronic myelogenous leukemia, BCR-ABL1 positive',
+    52: 'JAK2 V617F mutation',
+    53: 'Myeloid / lymphoid neoplasm with PDGFRA rearrangement',
+    54: 'Myeloid / lymphoid neoplasm with PDGFRB rearrangement',
+    55: 'Myeloid / lymphoid neoplasm with FGFR1 rearrangement',
+    90: 'One abnormality not listed above, or two of which at least one is '
+        'not listed above',
+    91: 'Two or more of the listed abnormalities together',
+    92: 'Three or more abnormalities, at least one not listed above',
+}
+
+
+def _post_treatment_codes(base: Dict[int, str], study: str) -> Dict[int, str]:
+    """8XX = the same finding on a study done AFTER treatment (p.209/211).
+
+    "8" plus the last two digits of the pre-treatment code, so t(8;21) = 001
+    before treatment and 801 after it.
+    """
+    return {800 + code: f'{label} — {study} after chemotherapy, immunotherapy '
+                        f'or targeted therapy'
+            for code, label in base.items()}
+
+
+_LEU_CHROMOSOME_MAP = CodeMap({
+    **_LEU_KARYOTYPE,
+    **_post_treatment_codes(_LEU_KARYOTYPE, 'chromosome study'),
+    988: _LEU_NA_MARROW,
+    998: 'Chromosome study performed but not interpretable (no metaphase cells)',
+    999: 'Not documented, unknown, or no chromosome study performed',
+}, width=3)
+
+_LEU_MOLECULAR_MAP = CodeMap({
+    **_LEU_MOLECULAR,
+    **_post_treatment_codes(_LEU_MOLECULAR, 'molecular study'),
+    988: _LEU_NA_MARROW,
+    998: 'Molecular study performed but not interpretable',
+    999: 'Not documented, unknown, or no molecular study performed',
+}, width=3)
+
+_LEU_INDUCTION_MAP = CodeMap({
+    1:   'Complete remission after the first induction chemotherapy',
+    2:   'Partial remission after the first induction chemotherapy',
+    988: 'Not applicable (not an acute leukemia morphology)',
+    990: 'Assessed, but neither complete nor partial remission (e.g. no '
+         'remission, incomplete remission)',
+    999: 'Response to first induction chemotherapy not documented or unknown',
+}, width=3)
+
+_LEU_AGVHD_MAP = CodeMap({
+    0:   'No acute GVHD',
+    10:  'Acute GVHD occurred, grade not stated',
+    11:  'Acute GVHD grade I',
+    12:  'Acute GVHD grade II',
+    13:  'Acute GVHD grade III',
+    14:  'Acute GVHD grade IV',
+    988: 'Not applicable (no allogeneic transplant, or an autologous one)',
+    999: 'Acute GVHD status not documented or unknown',
+}, width=3)
+
+_LEU_CGVHD_MAP = CodeMap({
+    0:   'No chronic GVHD',
+    1:   'Chronic GVHD occurred, severity not stated',
+    2:   'Chronic GVHD, limited stage',
+    3:   'Chronic GVHD, extensive stage',
+    988: 'Not applicable (no allogeneic transplant)',
+    999: 'Chronic GVHD status not documented or unknown',
+}, width=3)
+
+_LEU_HBSAG_MAP = _hepatitis_map('HBsAg', 'hepatitis B carriage', _LEU_NA_MARROW)
+_LEU_ANTIHCV_MAP = _hepatitis_map('Anti-HCV', 'hepatitis C infection', _LEU_NA_MARROW)
+
+_LEU_ACUTE_HEP_MAP = CodeMap({
+    1:   'No acute hepatitis flare (AST/ALT never exceeded 5x the upper limit)',
+    2:   'Acute hepatitis flare (AST or ALT exceeded 5x the upper limit)',
+    988: _LEU_NA_MARROW,
+    999: 'Unknown, or neither AST nor ALT was ever measured',
+}, width=3)
+
+# SSF10 (p.221-222) is a composite: characters 1-2 are the months from
+# diagnosis to the last molecular study, character 3 the log reduction band.
+_LEU_MRD_HEAD = {
+    **{f'{i:02d}': f'{i} completed month(s) from diagnosis to the last '
+                   f'molecular study' for i in range(25)},
+    '98': 'Interval not applicable (not CML M-9875/3, or no drug treatment)',
+    '99': 'Interval unknown, over 24 months, or no molecular study done',
+}
+_LEU_MRD_TAIL = {
+    '0': 'No log reduction (=0) or an increase',
+    '1': '0 < log reduction < 1',
+    '2': '1 <= log reduction < 2',
+    '3': '2 <= log reduction < 3',
+    '4': '3 <= log reduction < 4',
+    '5': 'log reduction >= 4',
+    '6': 'Undetectable, no log reduction figure given',
+    '8': 'Not applicable (not CML M-9875/3, or no drug treatment)',
+    '9': 'Unknown, over 24 months since diagnosis, or no molecular study done',
+}
+
+
+def _decode_leu_mrd(series: pd.Series) -> pd.Series:
+    """Leukemia SSF10: months since diagnosis + log reduction (p.221-222)."""
+    def _d(val):
+        if pd.isna(val) or str(val).strip() in ('', 'nan'):
+            return ''
+        s = strip_float_suffix(str(val).strip())
+        if len(s) == 3 and s[:2] in _LEU_MRD_HEAD and s[2] in _LEU_MRD_TAIL:
+            return f'{_LEU_MRD_HEAD[s[:2]]}; {_LEU_MRD_TAIL[s[2]]}'
+        return f'Code {s}'
+    return series.apply(_d)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Morphology-keyed groups (Cancer-SSF-Manual pp.194, 207)
+#
+# Every other group is chosen by primary site. These two are chosen by the
+# ICD-O-3 morphology code, and M-9811-9837 belongs to whichever group the SITE
+# says: bone marrow / blood / haematopoietic system = leukemia, anywhere else
+# = lymphoma. Site alone or morphology alone cannot decide it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LYMPHOMA_M_RANGES: Tuple[Tuple[int, int], ...] = (
+    (9590, 9597), (9650, 9663), (9671, 9680), (9684, 9684), (9687, 9699),
+    (9702, 9727), (9731, 9732), (9734, 9735), (9737, 9738), (9749, 9749),
+    (9751, 9759), (9761, 9762), (9766, 9766),
+)
+
+_LEUKEMIA_M_RANGES: Tuple[Tuple[int, int], ...] = (
+    (9740, 9742), (9800, 9809), (9840, 9948), (9950, 9950), (9960, 9968),
+    (9975, 9975), (9980, 9993),
+)
+
+# Shared between the two: the site decides.
+_MARROW_BLOOD_M_RANGE = (9811, 9837)
+_MARROW_BLOOD_SITES = frozenset({'C420', 'C421', 'C424'})
+
+
+def _in_ranges(m: int, ranges: Tuple[Tuple[int, int], ...]) -> bool:
+    return any(lo <= m <= hi for lo, hi in ranges)
+
+
+def _parse_morphology(morphology) -> int:
+    """First four digits of an ICD-O-3 M-code ('9680/3', 'M-9680' → 9680)."""
+    if morphology is None or pd.isna(morphology):
+        return 0
+    digits = re.sub(r'[^0-9]', '', str(morphology))
+    return int(digits[:4]) if len(digits) >= 4 else 0
+
+
+def _haematolymphoid_group(morphology, site_key: str) -> Optional[str]:
+    """'lymphoma' / 'leukemia' / None, from the morphology (and site)."""
+    m = _parse_morphology(morphology)
+    if not m:
+        return None
+    lo, hi = _MARROW_BLOOD_M_RANGE
+    if lo <= m <= hi:
+        return 'leukemia' if site_key in _MARROW_BLOOD_SITES else 'lymphoma'
+    if _in_ranges(m, _LEUKEMIA_M_RANGES):
+        return 'leukemia'
+    if _in_ranges(m, _LYMPHOMA_M_RANGES):
+        return 'lymphoma'
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SSF Profile registry
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2138,6 +2505,95 @@ def _build_profiles() -> Dict[str, SSFProfile]:
               '-- the registry has no separate field for the class itself.',
     )
 
+    # ── LYMPHOMA ──────────────────────────────────────────────────────────────
+    profiles['lymphoma'] = SSFProfile(
+        cancer_group='lymphoma',
+        site_label='Hodgkin and Non-Hodgkin Lymphoma',
+        site_codes=(),
+        morphology_codes=_LYMPHOMA_M_RANGES,
+        fields={
+            'SSF1':  SSFFieldDef('SSF1', 'HIV_Status',
+                                 'HIV infection status (p.195)',
+                                 decoder=_LYM_HIV_MAP.decode),
+            'SSF2':  SSFFieldDef('SSF2', 'B_Symptoms',
+                                 'Systemic (B) symptoms at diagnosis (p.196)',
+                                 decoder=_LYM_B_SYMPTOMS_MAP.decode),
+            'SSF3':  SSFFieldDef('SSF3', 'IPI_Score',
+                                 'International Prognostic Index (p.197-198)',
+                                 decoder=_LYM_IPI_MAP.decode),
+            'SSF4':  SSFFieldDef('SSF4', 'FLIPI_Score',
+                                 'Follicular Lymphoma IPI (p.199)',
+                                 decoder=_LYM_FLIPI_MAP.decode),
+            'SSF5':  SSFFieldDef('SSF5', 'HTLV1_Status',
+                                 'HTLV-1 infection status (p.200)',
+                                 decoder=_LYM_HTLV1_MAP.decode),
+            'SSF6':  SSFFieldDef('SSF6', 'CMV_Status_Lymphoma',
+                                 'Cytomegalovirus infection status (p.201)',
+                                 decoder=_LYM_CMV_MAP.decode),
+            'SSF7':  SSFFieldDef('SSF7', 'HBsAg_Lymphoma',
+                                 'Hepatitis B surface antigen (p.202)',
+                                 decoder=_LYM_HBSAG_MAP.decode),
+            'SSF8':  SSFFieldDef('SSF8', 'AntiHCV_Lymphoma',
+                                 'Hepatitis C antibody (p.203)',
+                                 decoder=_LYM_ANTIHCV_MAP.decode),
+            'SSF9':  SSFFieldDef('SSF9', 'Acute_Hepatitis_Lymphoma',
+                                 'Acute hepatitis flare (p.204)',
+                                 decoder=_LYM_ACUTE_HEP_MAP.decode),
+            'SSF10': SSFFieldDef('SSF10', 'ESR_IPS',
+                                 'Hodgkin prognostic factors: ESR and IPS '
+                                 '(p.205-206)',
+                                 decoder=_decode_lym_esr_ips),
+        },
+        notes=('Cancer-SSF-Manual pp.194-206. Selected by MORPHOLOGY, not by '
+               'primary site; which SSFs a case must report depends on the '
+               'M-code bucket (p.194).'),
+    )
+
+    # ── LEUKEMIA ──────────────────────────────────────────────────────────────
+    profiles['leukemia'] = SSFProfile(
+        cancer_group='leukemia',
+        site_label='Leukemia',
+        site_codes=(),
+        morphology_codes=_LEUKEMIA_M_RANGES,
+        fields={
+            'SSF1':  SSFFieldDef('SSF1', 'Leukemia_Chromosome_Study',
+                                 'Chromosome study (p.209-210)',
+                                 decoder=_LEU_CHROMOSOME_MAP.decode),
+            'SSF2':  SSFFieldDef('SSF2', 'Leukemia_Molecular_Study',
+                                 'Molecular study (p.211-212)',
+                                 decoder=_LEU_MOLECULAR_MAP.decode),
+            'SSF3':  SSFFieldDef('SSF3', 'Induction_Response',
+                                 'Response to the first induction '
+                                 'chemotherapy (p.213)',
+                                 decoder=_LEU_INDUCTION_MAP.decode),
+            'SSF4':  SSFFieldDef('SSF4', 'Acute_GVHD',
+                                 'Acute graft-versus-host disease (p.214-215)',
+                                 decoder=_LEU_AGVHD_MAP.decode),
+            'SSF5':  SSFFieldDef('SSF5', 'Chronic_GVHD',
+                                 'Chronic graft-versus-host disease (p.216)',
+                                 decoder=_LEU_CGVHD_MAP.decode),
+            'SSF6':  SSFFieldDef('SSF6', 'CMV_Status_Leukemia',
+                                 'Cytomegalovirus infection status (p.217)',
+                                 decoder=_LEU_CMV_MAP.decode),
+            'SSF7':  SSFFieldDef('SSF7', 'HBsAg_Leukemia',
+                                 'Hepatitis B surface antigen (p.218)',
+                                 decoder=_LEU_HBSAG_MAP.decode),
+            'SSF8':  SSFFieldDef('SSF8', 'AntiHCV_Leukemia',
+                                 'Hepatitis C antibody (p.219)',
+                                 decoder=_LEU_ANTIHCV_MAP.decode),
+            'SSF9':  SSFFieldDef('SSF9', 'Acute_Hepatitis_Leukemia',
+                                 'Acute hepatitis flare (p.220)',
+                                 decoder=_LEU_ACUTE_HEP_MAP.decode),
+            'SSF10': SSFFieldDef('SSF10', 'CML_Molecular_Response',
+                                 'Latest molecular treatment response, CML '
+                                 'only (p.221-222)',
+                                 decoder=_decode_leu_mrd),
+        },
+        notes=('Cancer-SSF-Manual pp.207-222. Selected by MORPHOLOGY. '
+               'M-9811-9837 is a leukemia only when the site is C42.0, C42.1 '
+               'or C42.4; elsewhere the same morphology is a lymphoma.'),
+    )
+
     # ── GENERIC FALLBACK ──────────────────────────────────────────────────────
     profiles['generic'] = SSFProfile(
         cancer_group='generic',
@@ -2291,6 +2747,28 @@ _ENCODER_WIRING: Dict[Tuple[str, str], Callable] = {
     ('endometrium', 'SSF8'):  _NOT_COLLECTED_MAP.encode,
     ('endometrium', 'SSF9'):  _NOT_COLLECTED_MAP.encode,
     ('endometrium', 'SSF10'): _NOT_COLLECTED_MAP.encode,
+
+    ('lymphoma', 'SSF1'):  _LYM_HIV_MAP.encode,
+    ('lymphoma', 'SSF2'):  _LYM_B_SYMPTOMS_MAP.encode,
+    ('lymphoma', 'SSF3'):  _LYM_IPI_MAP.encode,
+    ('lymphoma', 'SSF4'):  _LYM_FLIPI_MAP.encode,
+    ('lymphoma', 'SSF5'):  _LYM_HTLV1_MAP.encode,
+    ('lymphoma', 'SSF6'):  _LYM_CMV_MAP.encode,
+    ('lymphoma', 'SSF7'):  _LYM_HBSAG_MAP.encode,
+    ('lymphoma', 'SSF8'):  _LYM_ANTIHCV_MAP.encode,
+    ('lymphoma', 'SSF9'):  _LYM_ACUTE_HEP_MAP.encode,
+    ('lymphoma', 'SSF10'): _enc.encode_lym_esr_ips,
+
+    ('leukemia', 'SSF1'):  _LEU_CHROMOSOME_MAP.encode,
+    ('leukemia', 'SSF2'):  _LEU_MOLECULAR_MAP.encode,
+    ('leukemia', 'SSF3'):  _LEU_INDUCTION_MAP.encode,
+    ('leukemia', 'SSF4'):  _LEU_AGVHD_MAP.encode,
+    ('leukemia', 'SSF5'):  _LEU_CGVHD_MAP.encode,
+    ('leukemia', 'SSF6'):  _LEU_CMV_MAP.encode,
+    ('leukemia', 'SSF7'):  _LEU_HBSAG_MAP.encode,
+    ('leukemia', 'SSF8'):  _LEU_ANTIHCV_MAP.encode,
+    ('leukemia', 'SSF9'):  _LEU_ACUTE_HEP_MAP.encode,
+    ('leukemia', 'SSF10'): _enc.encode_leu_mrd,
 }
 
 for (_grp, _ssf_key), _encoder_fn in _ENCODER_WIRING.items():
@@ -2310,11 +2788,16 @@ for _group, _profile in _PROFILES.items():
 # Public API
 # ─────────────────────────────────────────────────────────────────────────────
 
-def detect_cancer_group(tcode1: str) -> str:
-    """Detect the cancer group from an ICD-O-3 topography code.
+def detect_cancer_group(tcode1: str, morphology=None) -> str:
+    """Detect the cancer group from an ICD-O-3 topography (and morphology) code.
 
     Args:
         tcode1: ICD-O-3 site code, e.g. 'C50.1', 'C34.1', 'C220'
+        morphology: ICD-O-3 morphology code, e.g. '9680/3'. Optional, but
+            REQUIRED to reach the lymphoma and leukemia profiles: the manual
+            defines those two by histology, not by site (pp.194, 207), so a
+            case whose morphology is not supplied falls back to its site and
+            will usually come out 'generic'.
 
     Returns:
         Cancer group string ('breast', 'lung', 'colorectum', etc.)
@@ -2325,12 +2808,23 @@ def detect_cancer_group(tcode1: str) -> str:
         'breast'
         >>> detect_cancer_group('C34.0')
         'lung'
-        >>> detect_cancer_group('C18.2')
-        'colorectum'
+        >>> detect_cancer_group('C77.9', '9680/3')
+        'lymphoma'
+        >>> detect_cancer_group('C42.1', '9875/3')
+        'leukemia'
     """
-    if not tcode1 or pd.isna(tcode1):
+    if (not tcode1 or pd.isna(tcode1)) and morphology is None:
         return 'generic'
-    code = str(tcode1).strip().upper()
+    code = '' if not tcode1 or pd.isna(tcode1) else str(tcode1).strip().upper()
+
+    # Morphology first: a lymphoma in the stomach is a lymphoma, not a gastric
+    # cancer, and the site would otherwise route it to the stomach profile.
+    if morphology is not None:
+        site_digits = re.sub(r'[^0-9]', '', code)
+        site_key = f'C{site_digits[:3]}' if len(site_digits) >= 3 else ''
+        haem = _haematolymphoid_group(morphology, site_key)
+        if haem is not None:
+            return haem
     # Try exact prefix match (C50, C34, etc.)
     prefix = re.match(r'(C\d+)', code)
     if prefix:
@@ -2350,7 +2844,8 @@ def detect_cancer_group(tcode1: str) -> str:
     return 'generic'
 
 
-def detect_cancer_group_from_series(tcode1_series: pd.Series) -> str:
+def detect_cancer_group_from_series(tcode1_series: pd.Series,
+                                    morphology_series: Optional[pd.Series] = None) -> str:
     """Detect the cancer group from a series of ICD-O-3 codes.
 
     Uses the most common (mode) cancer group across all patients.
@@ -2359,11 +2854,22 @@ def detect_cancer_group_from_series(tcode1_series: pd.Series) -> str:
 
     Args:
         tcode1_series: Series of TCODE1 values
+        morphology_series: Series of MCODE values, aligned on the same index.
+            Without it, lymphoma and leukemia cases cannot be recognised --
+            the manual keys those two off the morphology (pp.194, 207).
 
     Returns:
         Cancer group string
     """
-    groups = tcode1_series.dropna().apply(detect_cancer_group)
+    if morphology_series is not None:
+        morph = morphology_series.reindex(tcode1_series.index)
+        pairs = [(t, m) for t, m in zip(tcode1_series, morph)
+                 if not pd.isna(t) or not pd.isna(m)]
+        if not pairs:
+            return 'generic'
+        groups = pd.Series([detect_cancer_group(t, m) for t, m in pairs])
+    else:
+        groups = tcode1_series.dropna().apply(detect_cancer_group)
     if len(groups) == 0:
         return 'generic'
     mode_group = groups.mode().iloc[0]

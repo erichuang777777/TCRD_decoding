@@ -51,7 +51,7 @@ from tcr_decoder.utils import (
 from tcr_decoder.decoders import (
     decode_er_pr, decode_ki67, decode_her2, decode_nottingham,
     decode_ssf3_neoadj, decode_ebrt_additive, decode_sentinel,
-    decode_lnpositive, decode_cause_of_death, decode_smoking_triplet,
+    decode_lnexam, decode_lnpositive, decode_cause_of_death, decode_smoking_triplet,
 )
 from tcr_decoder.ssf_registry import (
     detect_cancer_group_from_series, apply_ssf_profile,
@@ -381,7 +381,12 @@ class TCRDecoder:
         else:
             tcode1_col = 'TCODE1_raw' if 'TCODE1_raw' in df.columns else None
             if tcode1_col:
-                self._detected_cancer_group = detect_cancer_group_from_series(df[tcode1_col])
+                # Lymphoma and leukemia are defined by histology, not by site
+                # (Cancer-SSF-Manual pp.194, 207), so MCODE has to travel with
+                # TCODE1 or a nodal lymphoma would be read as its site's cancer.
+                mcode = df['MCODE_raw'] if 'MCODE_raw' in df.columns else None
+                self._detected_cancer_group = detect_cancer_group_from_series(
+                    df[tcode1_col], mcode)
             else:
                 self._detected_cancer_group = 'generic'
             ssf_profile = get_ssf_profile(self._detected_cancer_group)
@@ -414,9 +419,14 @@ class TCRDecoder:
             self._raw('CSIZE95'), unknown_vals={'999', '9999', '888', '8888'})
         out['Perineural_Invasion'] = en(self._dec('PNI'))
         out['LVI']                 = en(self._dec('LVI'))
+        # 95-99 are five distinct situations (Longform-Manual p.129), not one
+        # "unknown": treating them as such lost four of them and made the
+        # field un-encodable. The text column keeps them; the numeric column
+        # holds the count when there is one.
+        _ln_exam_decoded = decode_lnexam(self._raw('LNEXAM'))
+        out['LN_Examined_Status']  = _ln_exam_decoded
         out['LN_Examined']         = pd.to_numeric(
-            clean_numeric(self._raw('LNEXAM'),
-                         unknown_vals={'95', '96', '97', '98', '99', '999'}),
+            _ln_exam_decoded.where(_ln_exam_decoded.str.isdigit()),
             errors='coerce').astype('Int64')
         _ln_pos_decoded = decode_lnpositive(self._raw('LN_POSITI'))
         out['LN_Positive']         = _ln_pos_decoded

@@ -49,6 +49,7 @@ import pandas as pd
 from tcr_decoder.core import AJCC_MAP, PRESTYPE_MAP, STYPE95_MAP, LNSCO_MAP
 from tcr_decoder.encoders import (
     batch_encode, encode_structural_map, encode_ebrt_additive, encode_lnpositive,
+    encode_lnexam,
 )
 from tcr_decoder.ssf_registry import (
     apply_ssf_encode_profile, detect_cancer_group_from_series, get_ssf_profile,
@@ -65,7 +66,8 @@ STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'Regional_LN_Surgery_Other': ('PRESLNSCO', lambda s: encode_structural_map(s, LNSCO_MAP)),
     'Regional_LN_Surgery_This':  ('SLNSCO95',  lambda s: encode_structural_map(s, LNSCO_MAP)),
     'EBRT_Technique':            ('EBRT',      encode_ebrt_additive),
-    'LN_Positive':                ('LN_POSITI', encode_lnpositive),
+    'LN_Positive':               ('LN_POSITI', encode_lnpositive),
+    'LN_Examined_Status':        ('LNEXAM',    encode_lnexam),
 }
 
 # (cancer_group, clean_column) pairs whose value in a `clean` DataFrame does
@@ -134,8 +136,12 @@ class TCREncoder:
             self._detected_cancer_group = self._forced_cancer_group
             self._log_msg(f'Cancer group: {self._forced_cancer_group} (forced)')
         elif 'Primary_Site_Code' in df.columns:
+            # Histology_Code carries MCODE, which is what selects the lymphoma
+            # and leukemia profiles (Cancer-SSF-Manual pp.194, 207).
+            histology = (df['Histology_Code'] if 'Histology_Code' in df.columns
+                         else None)
             self._detected_cancer_group = detect_cancer_group_from_series(
-                df['Primary_Site_Code'])
+                df['Primary_Site_Code'], histology)
             self._log_msg(f'Cancer group: {self._detected_cancer_group} (auto-detected)')
         else:
             self._detected_cancer_group = 'generic'

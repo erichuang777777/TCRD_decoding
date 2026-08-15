@@ -427,6 +427,39 @@ def decode_lnpositive(raw_series: pd.Series) -> pd.Series:
     return raw_series.fillna('').astype(str).apply(_decode)
 
 
+def decode_lnexam(raw_series: pd.Series) -> pd.Series:
+    """Decode LNEXAM (區域淋巴結檢查數目) with its sentinel codes.
+
+    Codebook: Longform-Manual p.127-129. Official range 00-90, 95-99.
+
+    95 through 99 are five DIFFERENT situations -- nodes sampled but not
+    removed, removed by sampling, removed by dissection, removed by an
+    unrecorded method, and never examined at all. They used to be handled as
+    'unknown' and blanked out together, which lost four distinctions and left
+    the field impossible to re-encode.
+    """
+    def _decode(v):
+        v = _norm(v)
+        if not v:
+            return ''
+        special = {
+            '00': 'No regional lymph node examined',
+            '90': '90 or more regional lymph nodes examined',
+            '95': 'Nodes not surgically removed (aspiration or core biopsy only)',
+            '96': 'Nodes removed by sampling, count not stated',
+            '97': 'Nodes removed by dissection, count not stated',
+            '98': 'Nodes surgically removed or examined, method and count not stated',
+            '99': 'Unknown whether nodes were examined, not applicable, or not documented',
+        }
+        if v in special:
+            return special[v]
+        if v.isdigit():
+            return v  # Actual count, 01-89
+        return v
+
+    return raw_series.fillna('').astype(str).apply(_decode)
+
+
 # ─── Cause of Death ─────────────────────────────────────────────────
 
 def decode_cause_of_death(series: pd.Series) -> pd.Series:

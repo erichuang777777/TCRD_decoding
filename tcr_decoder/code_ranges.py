@@ -386,8 +386,117 @@ THYROID: Dict[str, Tuple[int, FrozenSet[str], str]] = {
     for i in range(1, 11)
 }
 
-# Longform-Manual structural fields verified alongside the breast profile.
+# ─────────────────────────────────────────────────────────────────────────────
+# Lymphoma (Cancer-SSF-Manual, 民國114年12月修訂, pp.194-206)
+#
+# Selected by MORPHOLOGY, not by primary site. Which SSFs a case must report
+# depends on its M-code bucket (p.194); every field still has to accept its
+# whole 編碼範圍, so the ranges below are per field, not per bucket.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 000/001 = not tested (with / without a history), 010/011 = tested negative
+# (with / without a history), 020 = tested positive. Same shape for HBsAg and
+# anti-HCV, in both the lymphoma and the leukemia chapter.
+_HEPATITIS_SEROLOGY = _codes(
+    ('000', '001', '010', '011', '020', '988', '999'))
+
+_LYM_ESR_HEADS = tuple(f'{i:02d}' for i in range(1, 52)) + ('98', '99')
+_LYM_IPS_TAILS = tuple(str(i) for i in range(10))
+_LYM_ESR_IPS = _codes(h + t for h in _LYM_ESR_HEADS for t in _LYM_IPS_TAILS)
+
+LYMPHOMA: Dict[str, Tuple[int, FrozenSet[str], str]] = {
+    'SSF1':  (3, _codes(('001', '002', '988', '999')),
+              'p.195 後天人類免疫不全病毒感染狀況 (HIV)'),
+    'SSF2':  (3, _codes(('000', '010', '988', '999')),
+              'p.196 診斷時全身性之症狀 (B symptoms)'),
+    'SSF3':  (3, _codes(_num_range(0, 5, 3), ('988',),
+                        _num_range(990, 994, 3), ('999',)),
+              'p.197-198 IPI score'),
+    # 990-992 mean different bands here than in SSF3: FLIPI has three bands
+    # (low / intermediate / high), IPI has five.
+    'SSF4':  (3, _codes(_num_range(0, 5, 3), ('988',),
+                        _num_range(990, 992, 3), ('999',)),
+              'p.199 FLIPI score'),
+    # The 編碼範圍 line on p.200 reads "988" alone, but the code table on the
+    # same page defines 000/001/002/999 too. Both are accepted: a real HTLV-1
+    # result must still decode and round-trip.
+    'SSF5':  (3, _codes(_num_range(0, 2, 3), ('988', '999')),
+              'p.200 HTLV-1 感染狀況（編碼範圍與碼表不一致，取聯集）'),
+    'SSF6':  (3, _codes(_num_range(0, 3, 3), ('988', '999')),
+              'p.201 巨細胞病毒感染狀況 (CMV)'),
+    'SSF7':  (3, _HEPATITIS_SEROLOGY, 'p.202 B 型肝炎表面抗原 (HBsAg)'),
+    'SSF8':  (3, _HEPATITIS_SEROLOGY, 'p.203 C 型肝炎抗體 (Anti-HCV)'),
+    'SSF9':  (3, _codes(('001', '002', '988', '999')),
+              'p.204 急性肝炎發作'),
+    'SSF10': (3, _LYM_ESR_IPS,
+              'p.205-206 何杰金氏淋巴瘤預後因子 ESR (第1-2碼) 與 IPS (第3碼)'),
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Leukemia (Cancer-SSF-Manual, 民國114年12月修訂, pp.207-222)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _post_treatment(base: Iterable[str]) -> FrozenSet[str]:
+    """8XX: '8' plus the last two digits of a pre-treatment finding code.
+
+    p.209/211 -- a chromosome or molecular study done after chemotherapy,
+    immunotherapy or targeted therapy reports the same finding shifted into
+    the 800 block, so t(8;21) is 001 before treatment and 801 after it.
+    """
+    return frozenset('8' + c[-2:] for c in base)
+
+
+_LEU_KARYOTYPE_CODES = _codes(
+    _num_range(0, 7, 3), ('013',), _num_range(21, 27, 3),
+    ('041', '042', '051', '061'), _num_range(90, 92, 3),
+)
+
+_LEU_MOLECULAR_CODES = _codes(
+    _num_range(0, 13, 3), _num_range(21, 25, 3), ('041', '042'),
+    _num_range(51, 55, 3), _num_range(90, 92, 3),
+)
+
+_LEU_MRD_HEADS = tuple(f'{i:02d}' for i in range(25)) + ('98', '99')
+_LEU_MRD_TAILS = ('0', '1', '2', '3', '4', '5', '6', '8', '9')
+_LEU_MRD = _codes(h + t for h in _LEU_MRD_HEADS for t in _LEU_MRD_TAILS)
+
+LEUKEMIA: Dict[str, Tuple[int, FrozenSet[str], str]] = {
+    'SSF1':  (3, _codes(_LEU_KARYOTYPE_CODES,
+                        _post_treatment(_LEU_KARYOTYPE_CODES),
+                        ('988', '998', '999')),
+              'p.209-210 白血病染色體檢查'),
+    # The 編碼範圍 line on p.211 stops at 090-091, but the code table on p.212
+    # defines 092 (三種以上異常). Included, or a legally-coded 092 would be
+    # rejected as illegal.
+    'SSF2':  (3, _codes(_LEU_MOLECULAR_CODES,
+                        _post_treatment(_LEU_MOLECULAR_CODES),
+                        ('988', '998', '999')),
+              'p.211-212 白血病分子生物學檢查（碼表另有 092，已納入）'),
+    'SSF3':  (3, _codes(('001', '002', '988', '990', '999')),
+              'p.213 首次前導化學治療後反應'),
+    'SSF4':  (3, _codes(('000',), _num_range(10, 14, 3), ('988', '999')),
+              'p.214-215 急性移植體對抗宿主疾病 (aGVHD)'),
+    'SSF5':  (3, _codes(_num_range(0, 3, 3), ('988', '999')),
+              'p.216 慢性移植體對抗宿主疾病 (cGVHD)'),
+    # Leukemia's CMV table has no 000: "not tested" is folded into 999,
+    # unlike the lymphoma chapter's version of the same field.
+    'SSF6':  (3, _codes(_num_range(1, 3, 3), ('988', '999')),
+              'p.217 巨細胞病毒感染狀況 (CMV)'),
+    'SSF7':  (3, _HEPATITIS_SEROLOGY, 'p.218 B 型肝炎表面抗原 (HBsAg)'),
+    'SSF8':  (3, _HEPATITIS_SEROLOGY, 'p.219 C 型肝炎抗體 (Anti-HCV)'),
+    'SSF9':  (3, _codes(('001', '002', '988', '999')),
+              'p.220 急性肝炎發作'),
+    'SSF10': (3, _LEU_MRD,
+              'p.221-222 最近一次治療反應的微量殘餘疾病（第1-2碼月數、'
+              '第3碼 log reduction）'),
+}
+
+# Longform-Manual structural fields. Only fields with a real bidirectional
+# decoder/encoder pair are listed; the rest of the 99 Longform fields are
+# still passthrough and have nothing to check yet.
 LONGFORM: Dict[str, Tuple[int, FrozenSet[str], str]] = {
+    'LNEXAM':    (2, _codes(_num_range(0, 90, 2), _num_range(95, 99, 2)),
+                  'Longform p.127-129 區域淋巴結檢查數目'),
     'LN_POSITI': (2, _codes(_num_range(0, 90, 2), ('95', '97', '98', '99')),
                   'Longform p.130-131 區域淋巴結侵犯數目'),
 }
@@ -407,12 +516,15 @@ CODE_RANGES: Dict[str, Dict[str, Tuple[int, FrozenSet[str], str]]] = {
     'pancreas': PANCREAS,
     'ovary': OVARY,
     'bladder': BLADDER,
+    'lymphoma': LYMPHOMA,
+    'leukemia': LEUKEMIA,
     '_longform': LONGFORM,
 }
 
 SUPPORTED_GROUPS = ('breast', 'prostate', 'endometrium', 'thyroid',
                     'cervix', 'stomach', 'liver', 'lung', 'colorectum',
-                    'head_neck', 'esophagus', 'pancreas', 'ovary', 'bladder')
+                    'head_neck', 'esophagus', 'pancreas', 'ovary', 'bladder',
+                    'lymphoma', 'leukemia')
 
 
 def legal_codes(cancer_group: str, ssf_key: str) -> FrozenSet[str]:
