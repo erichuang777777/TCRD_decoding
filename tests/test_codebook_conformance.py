@@ -303,3 +303,48 @@ def test_data_dictionary_describes_every_ssf_column():
             expected_number = '8.' + ssf_key.replace('SSF', '')
             assert TCR_FIELD_NUMBER.get(field.column_name) is not None, field.column_name
     assert not missing, missing[:10]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The data dictionary's 癌登欄位序號 must match the manual's own numbering
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_every_claimed_field_number_exists_in_the_manual():
+    """A registrar uses these numbers to line our output up with the form.
+
+    Twenty of them used to point at a different field: 4.4 is 申報醫院緩和照護
+    and was claimed by the hormone-therapy columns, 7.1 is 身高 and was claimed
+    by performance status, 5.4 is 生存狀態 and was claimed by the last-contact
+    date. The remaining unconfirmed ones are listed explicitly rather than
+    left looking authoritative.
+    """
+    from tcr_decoder.data_dictionary import (
+        TCR_FIELD_NUMBER, UNVERIFIED_FIELD_NUMBERS)
+    from tcr_decoder.longform_fields import LONGFORM_FIELDS
+
+    unknown = sorted(
+        (col, str(seq)) for col, seq in TCR_FIELD_NUMBER.items()
+        if not str(seq).startswith('8.')          # SSFs are 8.x by construction
+        and col not in UNVERIFIED_FIELD_NUMBERS
+        and str(seq) not in LONGFORM_FIELDS
+    )
+    assert not unknown, f'field numbers not in the manual: {unknown}'
+
+
+def test_the_unverified_field_number_list_does_not_grow_silently():
+    from tcr_decoder.data_dictionary import (
+        TCR_FIELD_NUMBER, UNVERIFIED_FIELD_NUMBERS)
+
+    assert UNVERIFIED_FIELD_NUMBERS <= set(TCR_FIELD_NUMBER), (
+        'UNVERIFIED_FIELD_NUMBERS lists a column that no longer exists')
+    assert len(UNVERIFIED_FIELD_NUMBERS) == 11
+
+
+def test_field_widths_agree_with_the_manual():
+    """Where we enforce a width, it must be the manual's 欄位長度."""
+    from tcr_decoder.code_ranges import LONGFORM
+    from tcr_decoder.longform_fields import LONGFORM_FIELDS
+
+    for field, seq in (('LNEXAM', '2.14'), ('LN_POSITI', '2.15'),
+                       ('PRESLNSCO', '4.1.6'), ('SLNSCO95', '4.1.7')):
+        assert LONGFORM[field][0] == LONGFORM_FIELDS[seq].width, field

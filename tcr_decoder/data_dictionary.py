@@ -176,6 +176,25 @@ COLUMN_REGISTRY: Dict[str, tuple] = {
 # Maps output column name → TCR codebook field number (欄位序號)
 # Source: Longform-Manual 2025, Table 1 (pp. 12-16)
 # Derived / calculated columns have no TCR field number and are omitted.
+# Columns whose 癌登欄位序號 could NOT be confirmed against the manual's own
+# numbering (tcr_decoder/longform_fields.py). The numbers below are inherited
+# from the original hand-written registry and are kept because they are more
+# useful than nothing, but they are NOT evidence. Do not cite them on a
+# submission form without checking the manual.
+#
+# Twenty other columns pointed at the wrong field entirely and have been
+# corrected: 4.4 is 申報醫院緩和照護 (not hormone therapy), 7.1 is 身高 (not
+# performance status), 5.4 is 生存狀態 (not the last-contact date).
+UNVERIFIED_FIELD_NUMBERS = frozenset({
+    'Cause_of_Death', 'Cause_of_Death_Extended',
+    'Metastasis_Site_1', 'Metastasis_Site_2', 'Metastasis_Site_3',
+    'Minimally_Invasive', 'Radiation_Performed',
+    'Recurrence_Date_Extended', 'Recurrence_Type_Extended',
+    'Patient_ID',        # 1.1+1.2: composite of two official fields
+    'Survival_Years',    # derived from 5.4 and 2.5, not a reported field
+})
+
+
 TCR_FIELD_NUMBER: Dict[str, str] = {
     # Section 1: Basic identifiers
     'Patient_ID':                 '1.1+1.2',
@@ -242,25 +261,25 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'RT_Seq_Surgery':             '4.2.1.5',
     'RT_vs_Systemic_Seq':         '4.2.1.6',
     'EBRT_Technique':             '4.2.2.1',
-    'High_Dose_cGy':              '4.2.2.4',
-    'High_Dose_Fractions':        '4.2.2.5',
-    'Low_Dose_cGy':               '4.2.2.7',
-    'Low_Dose_Fractions':         '4.2.2.8',
+    'High_Dose_cGy':              '4.2.2.2.2',
+    'High_Dose_Fractions':        '4.2.2.2.3',
+    'Low_Dose_cGy':               '4.2.2.3.2',
+    'Low_Dose_Fractions':         '4.2.2.3.3',
     # Section 4.3: Systemic therapy
-    'Chemo_This_Hosp':            '4.3',
-    'Chemo_Other_Hosp':           '4.3',
-    'Hormone_This_Hosp':          '4.4',
-    'Hormone_Other_Hosp':         '4.4',
-    'Targeted_This_Hosp':         '4.5',
-    'Targeted_Other_Hosp':        '4.5',
-    'Immuno_This_Hosp':           '4.6',
-    'Immuno_Other_Hosp':          '4.6',
+    'Chemo_This_Hosp':            '4.3.3',
+    'Chemo_Other_Hosp':           '4.3.2',
+    'Hormone_This_Hosp':          '4.3.6',
+    'Hormone_Other_Hosp':         '4.3.5',
+    'Targeted_This_Hosp':         '4.3.14',
+    'Targeted_Other_Hosp':        '4.3.13',
+    'Immuno_This_Hosp':           '4.3.9',
+    'Immuno_Other_Hosp':          '4.3.8',
     # Section 5: Follow-up
     'Vital_Status':               '5.1',
-    'Cancer_Status':              '5.3',
-    'Last_Contact_Date':          '5.4',
-    'Recurrence_Date':            '5.5',
-    'Recurrence_Type':            '5.6',
+    'Cancer_Status':              '5.4',
+    'Last_Contact_Date':          '5.3',
+    'Recurrence_Date':            '5.1',
+    'Recurrence_Type':            '5.2',
     'Cause_of_Death':             '5.7',
     'Vital_Status_Extended':      '5.1',
     'Last_Contact_Extended':      '5.4',
@@ -269,11 +288,11 @@ TCR_FIELD_NUMBER: Dict[str, str] = {
     'Recurrence_Type_Extended':   '5.6',
     'Cause_of_Death_Extended':    '5.7',
     # Section 6: Physical measurements
-    'Height_cm':                  '6.1',
-    'Weight_kg':                  '6.2',
-    'Smoking':                    '6.3',
+    'Height_cm':                  '7.1',
+    'Weight_kg':                  '7.2',
+    'Smoking':                    '7.3',
     # Section 7: Performance status
-    'Performance_Status':         '7.1',
+    'Performance_Status':         '7.6',
     # Section 8: SSF fields (cancer-specific biomarkers)
     'ER_Status':                  '8.1',
     'PR_Status':                  '8.2',
