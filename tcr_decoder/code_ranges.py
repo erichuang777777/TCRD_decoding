@@ -499,6 +499,20 @@ LONGFORM: Dict[str, Tuple[int, FrozenSet[str], str]] = {
                   'Longform p.127-129 區域淋巴結檢查數目'),
     'LN_POSITI': (2, _codes(_num_range(0, 90, 2), ('95', '97', '98', '99')),
                   'Longform p.130-131 區域淋巴結侵犯數目'),
+    'LAT95':     (1, _codes(_num_range(0, 5, 1), ('9',)),
+                  'Longform p.87-88 側性 (#2.7)'),
+    'MCODE5':    (1, _codes(('2', '3')),
+                  'Longform p.91-92 性態碼 (#2.9)'),
+    # Code 3 is legal only for the haematolymphoid morphologies (M9590-9993);
+    # the solid-tumour table on p.102 has no 3. The 編碼範圍 line states 1-9
+    # for the field as a whole, so 3 is legal here and decode picks the table
+    # from MCODE.
+    'CONFER':    (1, _codes(_num_range(1, 9, 1)),
+                  'Longform p.102-104 癌症確診方式 (#2.11)'),
+    'PNI':       (1, _codes(('0', '1', '7', '8', '9')),
+                  'Longform p.114-115 神經侵襲 (#2.13.1)'),
+    'LVI':       (1, _codes(('0', '1', '7', '8', '9')),
+                  'Longform p.117-118 淋巴管或血管侵犯 (#2.13.2)'),
     'PRESLNSCO': (1, _codes(_num_range(0, 7, 1), ('9',)),
                   'Longform p.203 外院區域淋巴結手術範圍'),
     'SLNSCO95':  (1, _codes(_num_range(0, 7, 1), ('9',)),

@@ -47,6 +47,10 @@ from typing import Dict, Optional, Tuple
 import pandas as pd
 
 from tcr_decoder.core import AJCC_MAP, LNSCO_MAP
+from tcr_decoder.longform_codes import (
+    BEHAVIOR_MAP, LATERALITY_MAP, LVI_MAP, PERINEURAL_INVASION_MAP,
+    encode_confirmation,
+)
 from tcr_decoder.encoders import (
     batch_encode, encode_structural_map, encode_ebrt_additive, encode_lnpositive,
     encode_lnexam, encode_surgery,
@@ -66,6 +70,10 @@ STRUCTURAL_FIELD_ENCODERS: Dict[str, Tuple[str, callable]] = {
     'EBRT_Technique':            ('EBRT',      encode_ebrt_additive),
     'LN_Positive':               ('LN_POSITI', encode_lnpositive),
     'LN_Examined_Status':        ('LNEXAM',    encode_lnexam),
+    'Laterality':                ('LAT95',     LATERALITY_MAP.encode),
+    'Behavior':                  ('MCODE5',    BEHAVIOR_MAP.encode),
+    'Perineural_Invasion':       ('PNI',       PERINEURAL_INVASION_MAP.encode),
+    'LVI':                       ('LVI',       LVI_MAP.encode),
 }
 
 # (cancer_group, clean_column) pairs whose value in a `clean` DataFrame does
@@ -171,6 +179,20 @@ class TCREncoder:
             series = df[clean_col].astype(str).replace('nan', '')
             out[f'{raw_field}_raw'] = batch_encode(encoder_fn, series, on_error=on_error)
 
+        # CONFER's table depends on the morphology (manual p.102/104).
+        histology = df.get('Histology_Code')
+        if 'Confirmation_Method' in df.columns:
+            if histology is None:
+                self.unencoded_columns['Confirmation_Method'] = (
+                    'Code 3 exists only for M9590-9993, and this DataFrame '
+                    'has no Histology_Code column to tell the tables apart')
+            else:
+                self._log_msg('Encoding Confirmation_Method -> CONFER_raw')
+                series = df['Confirmation_Method'].astype(str).replace('nan', '')
+                out['CONFER_raw'] = batch_encode(
+                    lambda s: encode_confirmation(s, histology), series,
+                    on_error=on_error)
+
         # Surgery of primary site is site-specific (Appendix B), so its
         # encoder needs the topography code alongside the label.
         site = df.get('Primary_Site_Code')
@@ -190,7 +212,9 @@ class TCREncoder:
                 lambda s: encode_surgery(s, site), series, on_error=on_error)
 
         handled_clean_cols = (set(ssf_input_cols) | set(STRUCTURAL_FIELD_ENCODERS)
-                              | {'Surgery_Type_Other_Hosp', 'Surgery_Type_This_Hosp'})
+                              | {'Surgery_Type_Other_Hosp',
+                                 'Surgery_Type_This_Hosp',
+                                 'Confirmation_Method'})
         for col in df.columns:
             if (col not in handled_clean_cols and col != 'Primary_Site_Code'
                     and col not in self.unencoded_columns):

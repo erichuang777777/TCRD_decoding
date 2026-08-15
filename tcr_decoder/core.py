@@ -65,6 +65,10 @@ from tcr_decoder.ssf_registry import (
     detect_cancer_group_from_series, apply_ssf_profile,
     get_ssf_profile, list_supported_cancers,
 )
+from tcr_decoder.longform_codes import (
+    BEHAVIOR_MAP, LATERALITY_MAP, LVI_MAP, PERINEURAL_INVASION_MAP,
+    decode_confirmation,
+)
 from tcr_decoder.validators import run_all_validators
 from tcr_decoder.input_validator import validate_input
 from tcr_decoder.derived import add_structural_derived
@@ -373,18 +377,21 @@ class TCRDecoder:
         # ── Tumour Characteristics ────────────────────────
         out['Primary_Site_Code']   = self._raw('TCODE1')
         out['Primary_Site']        = en(self._dec('TCODE1'))
-        out['Laterality']          = en(self._dec('LAT95'))
+        out['Laterality']          = LATERALITY_MAP.decode(self._raw('LAT95'))
         out['Histology_Code']      = self._raw('MCODE')
         out['Histology']           = self._dec('MCODE').apply(
             lambda v: clean_text(re.sub(r'^\d+:\s*', '', str(v))))
-        out['Behavior']            = en(self._dec('MCODE5'))
+        out['Behavior']            = BEHAVIOR_MAP.decode(self._raw('MCODE5'))
         out['Grade_Pathologic']    = en(self._dec('MCODE6'))
         out['Grade_Clinical']      = en(self._dec('MCODE6C'))
-        out['Confirmation_Method'] = en(self._dec('CONFER'))
+        # CONFER has two tables and code 3 exists only for M9590-9993, so
+        # the morphology has to travel with it (manual p.102/104).
+        out['Confirmation_Method'] = decode_confirmation(
+            self._raw('CONFER'), self._raw('MCODE'))
         out['Tumor_Size_mm']       = clean_numeric(
             self._raw('CSIZE95'), unknown_vals={'999', '9999', '888', '8888'})
-        out['Perineural_Invasion'] = en(self._dec('PNI'))
-        out['LVI']                 = en(self._dec('LVI'))
+        out['Perineural_Invasion'] = PERINEURAL_INVASION_MAP.decode(self._raw('PNI'))
+        out['LVI']                 = LVI_MAP.decode(self._raw('LVI'))
         # 95-99 are five distinct situations (Longform-Manual p.129), not one
         # "unknown": treating them as such lost four of them and made the
         # field un-encodable. The text column keeps them; the numeric column

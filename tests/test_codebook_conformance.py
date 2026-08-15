@@ -26,6 +26,10 @@ from tcr_decoder.code_ranges import (
     CODE_RANGES, LONGFORM, SUPPORTED_GROUPS, field_width, is_legal_code,
 )
 from tcr_decoder.surgery_codes import SURGERY_TABLES, surgery_table_name
+from tcr_decoder.longform_codes import (
+    BEHAVIOR_MAP, CONFIRMATION_HAEM_MAP, CONFIRMATION_SOLID_MAP, LATERALITY_MAP,
+    LVI_MAP, PERINEURAL_INVASION_MAP, decode_confirmation, encode_confirmation,
+)
 from tcr_decoder.decoders import decode_lnexam, decode_lnpositive, decode_surgery
 from tcr_decoder.encoders import encode_lnexam, encode_lnpositive, encode_surgery
 from tcr_decoder.ssf_registry import _generic_ssf, get_ssf_profile
@@ -141,6 +145,10 @@ def test_prostate_biopsy_and_prostatectomy_specimens_are_distinguishable():
 LONGFORM_CODECS = {
     'LNEXAM':    (decode_lnexam, encode_lnexam),
     'LN_POSITI': (decode_lnpositive, encode_lnpositive),
+    'LAT95':     (LATERALITY_MAP.decode, LATERALITY_MAP.encode),
+    'MCODE5':    (BEHAVIOR_MAP.decode, BEHAVIOR_MAP.encode),
+    'PNI':       (PERINEURAL_INVASION_MAP.decode, PERINEURAL_INVASION_MAP.encode),
+    'LVI':       (LVI_MAP.decode, LVI_MAP.encode),
 }
 
 
@@ -348,3 +356,57 @@ def test_field_widths_agree_with_the_manual():
     for field, seq in (('LNEXAM', '2.14'), ('LN_POSITI', '2.15'),
                        ('PRESLNSCO', '4.1.6'), ('SLNSCO95', '4.1.7')):
         assert LONGFORM[field][0] == LONGFORM_FIELDS[seq].width, field
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 癌症確診方式 (#2.11) has two tables, chosen by morphology
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize('morphology,table', [
+    ('8500/3', CONFIRMATION_SOLID_MAP),     # invasive ductal carcinoma
+    ('9680/3', CONFIRMATION_HAEM_MAP),      # diffuse large B-cell lymphoma
+])
+def test_confirmation_method_roundtrips_over_both_tables(morphology, table):
+    codes = pd.Series(sorted(str(c) for c in table.mapping), dtype=object)
+    morph = pd.Series([morphology] * len(codes))
+    decoded = decode_confirmation(codes, morph)
+    encoded = encode_confirmation(decoded, morph).astype(str)
+
+    assert not [d for d in decoded if d.startswith('Code ')]
+    assert len(set(decoded)) == len(decoded), 'duplicate labels'
+    assert list(codes) == list(encoded)
+    assert all(len(e) == 1 for e in encoded)
+
+
+def test_confirmation_code_3_is_haematolymphoid_only():
+    """The solid-tumour table on p.102 has no code 3.
+
+    Decoding it with the haematolymphoid meaning for a breast cancer would
+    invent an immunophenotyping result that was never reported.
+    """
+    solid = decode_confirmation(pd.Series(['3']), pd.Series(['8500/3'])).iloc[0]
+    haem = decode_confirmation(pd.Series(['3']), pd.Series(['9680/3'])).iloc[0]
+    assert solid == 'Code 3'
+    assert 'immunophenotyping' in haem
+
+
+def test_confirmation_code_5_is_worded_differently_in_each_table():
+    solid = decode_confirmation(pd.Series(['5']), pd.Series(['8500/3'])).iloc[0]
+    haem = decode_confirmation(pd.Series(['5']), pd.Series(['9680/3'])).iloc[0]
+    assert solid != haem
+
+
+def test_perineural_and_lvi_name_their_own_subject():
+    """Same code shape, different subject.
+
+    Codes 0, 1 and 7 are about the finding and must say which finding, or a
+    reviewer reading the decoded file cannot tell perineural invasion from
+    lymph-vascular invasion. Codes 8 (not applicable) and 9 (not documented)
+    are generic and are shared on purpose -- they carry no subject.
+    """
+    codes = pd.Series(['0', '1', '7'])
+    pni = list(PERINEURAL_INVASION_MAP.decode(codes))
+    lvi = list(LVI_MAP.decode(codes))
+    assert not set(pni) & set(lvi)
+    assert all('perineural invasion' in p.lower() for p in pni)
+    assert all('lymph-vascular invasion' in l.lower() for l in lvi)
