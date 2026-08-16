@@ -25,6 +25,36 @@ class TestSyntheticGeneratorBasic:
             df = gen.generate()
             assert len(df) == 20, f'{cancer}: expected 20 rows, got {len(df)}'
 
+    def test_kpsecog_raw_is_always_a_legal_code(self):
+        """Regression (found via a checked-in FHIR IG example): the
+        generator used to write a bare '9' for "unknown", which is not a
+        legal KPSECOG code at any width (legal codes are 3 characters:
+        000-005, 988, 999) -- the IG's example-QuestionnaireResponse builder
+        then had to mark that answer as an unvalidatable free-text string on
+        an item declared `choice`, which is not valid per the base FHIR
+        Questionnaire rules (only `open-choice` permits that)."""
+        from tcr_decoder.code_ranges import LONGFORM
+
+        legal = LONGFORM['KPSECOG'][1]
+        for cancer in ('breast', 'lung', 'colorectum'):
+            df = SyntheticTCRGenerator(cancer_group=cancer, n=200, seed=7).generate()
+            bad = [v for v in df['KPSECOG_raw'].astype(str) if v not in legal]
+            assert not bad, f'{cancer}: illegal KPSECOG_raw values {bad[:5]}'
+
+    def test_bmi_is_always_physiologically_plausible(self):
+        """Regression: an unclamped normal draw for height/weight could
+        occasionally produce a BMI outside any real human range, and which
+        row (if any) hit that tail depended on the exact sequence of RNG
+        draws earlier in the same row -- so it silently started failing
+        after an unrelated field's generator changed how many random values
+        it consumes per row. Height/weight are now clipped to a generous
+        physiological range regardless of what precedes them."""
+        for seed in (1, 7, 42, 20260814):
+            df = SyntheticTCRGenerator(cancer_group='breast', n=50, seed=seed).generate()
+            bmi = df['WEIGHT_raw'] / (df['HEIGHT_raw'] / 100) ** 2
+            assert (bmi >= 10).all() and (bmi <= 70).all(), (
+                f'seed={seed}: implausible BMI {bmi[(bmi < 10) | (bmi > 70)].tolist()}')
+
     def test_reproducible_with_same_seed(self):
         gen1 = SyntheticTCRGenerator(cancer_group='breast', n=10, seed=42)
         gen2 = SyntheticTCRGenerator(cancer_group='breast', n=10, seed=42)

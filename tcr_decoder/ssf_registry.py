@@ -1936,6 +1936,17 @@ _LEUKEMIA_M_RANGES: Tuple[Tuple[int, int], ...] = (
 _MARROW_BLOOD_M_RANGE = (9811, 9837)
 _MARROW_BLOOD_SITES = frozenset({'C420', 'C421', 'C424'})
 
+# Mucosal melanoma of the head and neck (Cancer-SSF-Manual p.5/11) reuses the
+# head_neck SSF profile for a specific list of sinonasal sites, but ONLY for
+# these nine melanoma morphologies -- C30.0/C31.0-C31.1 with any other
+# histology (e.g. a squamous carcinoma of the middle ear, C30.1, or another
+# sinus subsite, C31.2-C31.9) has no SSF table in the manual at all. Site
+# alone previously registered the whole 'C30'/'C31' prefix, which routed
+# those non-melanoma, non-listed subsites into head_neck too.
+_HN_MUCOSAL_MELANOMA_SITES = frozenset({'C300', 'C310', 'C311'})
+_HN_MUCOSAL_MELANOMA_M_CODES = frozenset(
+    {8720, 8721, 8722, 8730, 8745, 8746, 8770, 8771, 8772})
+
 
 def _in_ranges(m: int, ranges: Tuple[Tuple[int, int], ...]) -> bool:
     return any(lo <= m <= hi for lo, hi in ranges)
@@ -1962,6 +1973,16 @@ def _haematolymphoid_group(morphology, site_key: str) -> Optional[str]:
     if _in_ranges(m, _LYMPHOMA_M_RANGES):
         return 'lymphoma'
     return None
+
+
+def _mucosal_melanoma_group(morphology, site_key: str) -> Optional[str]:
+    """'head_neck' if this is mucosal melanoma at a qualifying sinonasal
+    site, else None. Site alone (C30.0/C31.0-C31.1) is not enough -- the
+    manual gates this specific site list on morphology too (p.5/11)."""
+    if site_key not in _HN_MUCOSAL_MELANOMA_SITES:
+        return None
+    m = _parse_morphology(morphology)
+    return 'head_neck' if m in _HN_MUCOSAL_MELANOMA_M_CODES else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2402,9 +2423,14 @@ def _build_profiles() -> Dict[str, SSFProfile]:
     profiles['head_neck'] = SSFProfile(
         cancer_group='head_neck',
         site_label='Head and Neck Cancer',
+        # C30 and C31 are deliberately NOT registered here as plain 3-char
+        # prefixes: C30.1 (middle ear) and C31.2-C31.9 (other sinus subsites)
+        # have no SSF table in the manual at all, and even the qualifying
+        # C30.0/C31.0-C31.1 need mucosal-melanoma morphology, handled by
+        # _mucosal_melanoma_group() in detect_cancer_group() -- see there.
         site_codes=('C00', 'C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07',
                     'C08', 'C09', 'C10', 'C11', 'C12', 'C13', 'C14',
-                    'C30', 'C31', 'C32', 'C760'),
+                    'C32', 'C760'),
         fields={
             'SSF1':  SSFFieldDef('SSF1', 'Cervical_Node_Size',
                                  'Size of the involved cervical lymph node, mm (p.7)',
@@ -2825,6 +2851,9 @@ def detect_cancer_group(tcode1: str, morphology=None) -> str:
         haem = _haematolymphoid_group(morphology, site_key)
         if haem is not None:
             return haem
+        melanoma = _mucosal_melanoma_group(morphology, site_key)
+        if melanoma is not None:
+            return melanoma
     # Try exact prefix match (C50, C34, etc.)
     prefix = re.match(r'(C\d+)', code)
     if prefix:

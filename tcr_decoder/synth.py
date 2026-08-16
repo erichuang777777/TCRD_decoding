@@ -1508,12 +1508,20 @@ class SyntheticTCRGenerator:
             alc  = _choice(r, ['00', '01', '09'], p=[0.50, 0.45, 0.05])
             smoking_raw = f'{smk},{btel},{alc}'
 
-            # Height / Weight
-            height = int(r.normal(162, 8))
-            weight = int(r.normal(62, 12))
+            # Height / Weight. An unclamped normal distribution can draw an
+            # implausible tail value (a near-zero or negative weight), which
+            # is harmless on its own but produces a nonsensical BMI --
+            # clipped to a generous physiological range rather than letting
+            # a rare draw depend on exactly which RNG state precedes it.
+            height = int(np.clip(r.normal(162, 8), 140, 195))
+            weight = int(np.clip(r.normal(62, 12), 35, 130))
 
-            # Performance
-            ecog = int(r.choice([0, 1, 2, 3, 9], p=[0.30, 0.35, 0.20, 0.05, 0.10]))
+            # Performance (KPSECOG, #7.6). Legal codes are 3 characters
+            # (000-005 for ECOG-only, 988, 999) -- a bare '9' is not legal at
+            # any width, so an "unknown" draw must land on '999', not '9'.
+            _ecog_grade = int(r.choice([0, 1, 2, 3], p=[0.30, 0.35, 0.20, 0.15]))
+            kpsecog_raw = (str(_ecog_grade).zfill(3) if r.random() < 0.90
+                          else '999')
 
             # Class of case
             class95 = _choice(r, ['1', '2', '3'], p=[0.75, 0.15, 0.10])
@@ -1637,7 +1645,7 @@ class SyntheticTCRGenerator:
                 'DIECAUSE6_decoded': 'Not dead' if vsta6 == '0' else ('Cancer' if vsta6 == '1' else 'Non-cancer'),
                 'HEIGHT_raw':      height,
                 'WEIGHT_raw':      weight,
-                'KPSECOG_raw':     ecog, 'KPSECOG_decoded': f'ECOG {ecog}',
+                'KPSECOG_raw':     kpsecog_raw, 'KPSECOG_decoded': '',
                 'CLASS95_raw':     class95, 'CLASS95_decoded': _CLASS_MAP.get(class95, class95),
                 'CLASSOFDIAG_raw': '1', 'CLASSOFDIAG_decoded': 'Diagnosed at this hospital',
                 'CLASSOFTREAT_raw': class95, 'CLASSOFTREAT_decoded': _CLASS_MAP.get(class95, class95),
